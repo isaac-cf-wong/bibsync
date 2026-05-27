@@ -1,7 +1,7 @@
 # Customize And Clean Up
 
 The setup script renames the crate, Rust import path, binary name, repository
-URLs, and docs references from `rust-package-template` to the new repository
+URLs, and docs references from `bibsync` to the new repository
 name.
 
 After running it, review:

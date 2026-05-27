@@ -15,7 +15,7 @@ cargo test --all-features
 ## Example
 
 ```rust
-use rust_package_template::greeting;
+use bibsync::greeting;
 
 assert_eq!(greeting("Ferris").unwrap(), "Hello, Ferris!");
 ```

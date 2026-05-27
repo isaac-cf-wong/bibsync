@@ -1,15 +1,15 @@
 [package]
-name = "rust-package-template"
+name = "bibsync"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Isaac C. F. Wong"]
-description = "A GitHub template repository for a Rust package"
+description = "A Rust package to automatically resolve, synchronize, and validate LaTeX citations across BibTeX databases"
 readme = "README.md"
 license = "BSD-3-Clause"
-repository = "https://github.com/isaac-cf-wong/rust-package-template"
-homepage = "https://github.com/isaac-cf-wong/rust-package-template"
-documentation = "https://isaac-cf-wong.github.io/rust-package-template"
+repository = "https://github.com/isaac-cf-wong/bibsync"
+homepage = "https://github.com/isaac-cf-wong/bibsync"
+documentation = "https://isaac-cf-wong.github.io/bibsync"
 keywords = ["rust", "github", "template"]
 categories = ["development-tools"]
 exclude = ["/.github", "/docs/template_documentation"]
@@ -24,11 +24,11 @@ divan = "0.1"
 predicates = "3.1"
 
 [lib]
-name = "rust_package_template"
+name = "bibsync"
 path = "src/lib.rs"
 
 [[bin]]
-name = "rust-package-template"
+name = "bibsync"
 path = "src/main.rs"
 
 [[bench]]

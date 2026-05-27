@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "rust-package-template: A GitHub template repository for a Rust package"
+title: "bibsync: A Rust package to automatically resolve, synchronize, and validate LaTeX citations across BibTeX databases"
 license: "BSD-3-Clause"
 type: software
 authors:
