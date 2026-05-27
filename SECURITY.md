@@ -1,6 +1,6 @@
 # Security Policy
 
-We support the latest stable release of `rust-package-template`. Please ensure
+We support the latest stable release of `bibsync`. Please ensure
 you are using the most recent version before reporting a security issue.
 
 | Version | Supported |

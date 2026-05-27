@@ -5,7 +5,7 @@ use predicates::prelude::predicate;
 
 #[test]
 fn cli_prints_default_greeting() {
-    let mut command = Command::cargo_bin("rust-package-template").expect("binary exists");
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
 
     command
         .assert()
@@ -15,7 +15,7 @@ fn cli_prints_default_greeting() {
 
 #[test]
 fn cli_prints_named_greeting() {
-    let mut command = Command::cargo_bin("rust-package-template").expect("binary exists");
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
 
     command
         .arg("Ferris")

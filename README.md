@@ -1,9 +1,9 @@
 # Rust Package Template
 
-[![CI](https://github.com/isaac-cf-wong/rust-package-template/actions/workflows/ci.yml/badge.svg)](https://github.com/isaac-cf-wong/rust-package-template/actions/workflows/ci.yml)
-[![Documentation Status](https://github.com/isaac-cf-wong/rust-package-template/actions/workflows/documentation.yml/badge.svg)](https://isaac-cf-wong.github.io/rust-package-template/)
-[![Crates.io](https://img.shields.io/crates/v/rust-package-template)](https://crates.io/crates/rust-package-template)
-[![Docs.rs](https://docs.rs/rust-package-template/badge.svg)](https://docs.rs/rust-package-template)
+[![CI](https://github.com/isaac-cf-wong/bibsync/actions/workflows/ci.yml/badge.svg)](https://github.com/isaac-cf-wong/bibsync/actions/workflows/ci.yml)
+[![Documentation Status](https://github.com/isaac-cf-wong/bibsync/actions/workflows/documentation.yml/badge.svg)](https://isaac-cf-wong.github.io/bibsync/)
+[![Crates.io](https://img.shields.io/crates/v/bibsync)](https://crates.io/crates/bibsync)
+[![Docs.rs](https://docs.rs/bibsync/badge.svg)](https://docs.rs/bibsync)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
 This project is a template for creating Rust packages with a standardized

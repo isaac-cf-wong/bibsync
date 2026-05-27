@@ -1,4 +1,4 @@
-//! Library entry point for `rust-package-template`.
+//! Library entry point for `bibsync`.
 //!
 //! Replace this sample module with the library API for your package.
 

@@ -59,8 +59,8 @@ features = [
 ]
 
 [repo]
-url = "https://github.com/isaac-cf-wong/rust-package-template"
-name = "rust-package-template"
+url = "https://github.com/isaac-cf-wong/bibsync"
+name = "bibsync"
 
 [markdown_extensions]
 admonition = {}

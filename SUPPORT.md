@@ -1,6 +1,6 @@
 # Support
 
-For questions, ideas, or help using `rust-package-template`, open a GitHub
+For questions, ideas, or help using `bibsync`, open a GitHub
 Discussion or Issue.
 
 Use Discussions for general usage questions. Use Issues for bug reports and

@@ -1,6 +1,6 @@
-# Contributing to rust-package-template
+# Contributing to bibsync
 
-Thank you for your interest in contributing to `rust-package-template`.
+Thank you for your interest in contributing to `bibsync`.
 
 ## Development
 

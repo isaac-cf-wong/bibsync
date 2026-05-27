@@ -6,5 +6,5 @@ fn main() {
 
 #[divan::bench]
 fn greeting() {
-    let _ = rust_package_template::greeting("benchmark");
+    let _ = bibsync::greeting("benchmark");
 }

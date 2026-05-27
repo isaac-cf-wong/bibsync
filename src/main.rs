@@ -1,7 +1,7 @@
 //! Command-line entry point for the template package.
 
 use clap::Parser;
-use rust_package_template::greeting;
+use bibsync::greeting;
 
 /// Print a greeting.
 #[derive(Debug, Parser)]
