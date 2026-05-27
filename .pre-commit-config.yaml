@@ -36,7 +36,7 @@ repos:
           - id: taplo-format
 
     - repo: https://github.com/crate-ci/typos
-      rev: v1.46.1
+      rev: v1.46.3
       hooks:
           - id: typos
             args: []
