@@ -1,0 +1,87 @@
+name: Publish
+
+on:
+    workflow_dispatch:
+        inputs:
+            tag_name:
+                description: "Tag name for the publish (e.g., v1.2.3)"
+                required: true
+                type: string
+            publish:
+                description: "Publish to crates.io"
+                required: true
+                default: false
+                type: boolean
+    workflow_call:
+        inputs:
+            tag_name:
+                description: "Tag name for the publish (e.g., v1.2.3)"
+                required: true
+                type: string
+            publish:
+                description: "Publish to crates.io"
+                required: false
+                default: false
+                type: boolean
+
+env:
+    # Template safety switch. Change this to `true` in a real package after
+    # configuring the `crates-io` environment and `CARGO_REGISTRY_TOKEN` secret.
+    PUBLISH_TO_CRATES_IO: "false"
+
+jobs:
+    verify:
+        runs-on: ubuntu-latest
+        outputs:
+            publish_enabled: ${{ steps.publish_gate.outputs.enabled }}
+        steps:
+            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              with:
+                  ref: ${{ inputs.tag_name }}
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0 # stable
+              with:
+                  toolchain: stable
+
+            - name: Cache Cargo
+              uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+
+            - name: Verify package
+              run: cargo package
+
+            - name: Evaluate publish gate
+              id: publish_gate
+              run: |
+                  if [ "${PUBLISH_TO_CRATES_IO}" = "true" ] && [ "${{ inputs.publish }}" = "true" ]; then
+                    echo "enabled=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "enabled=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Skip publish
+              if: ${{ steps.publish_gate.outputs.enabled != 'true' }}
+              run: |
+                  echo "Publishing is disabled for this template." >> "$GITHUB_STEP_SUMMARY"
+                  echo "Set PUBLISH_TO_CRATES_IO to true and pass publish=true to enable crates.io publishing." >> "$GITHUB_STEP_SUMMARY"
+
+    publish:
+        needs: verify
+        if: ${{ needs.verify.outputs.publish_enabled == 'true' }}
+        runs-on: ubuntu-latest
+        environment: crates-io
+        steps:
+            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+              with:
+                  ref: ${{ inputs.tag_name }}
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@56f84321dbccf38fb67ce29ab63e4754056677e0 # stable
+              with:
+                  toolchain: stable
+
+            - name: Cache Cargo
+              uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
+
+            - name: Publish crate
+              run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"

@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+title: "rust-package-template: A GitHub template repository for a Rust package"
+license: "BSD-3-Clause"
+type: software
+authors:
+    - given-names: Isaac C. F.
+      family-names: Wong
+      affiliation: KU Leuven
+      orcid: "https://orcid.org/0000-0003-2166-0027"
+keywords:
+    - rust
+    - github
+    - template

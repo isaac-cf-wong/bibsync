@@ -1,0 +1,47 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": ["config:recommended", "config:best-practices", ":semanticCommitTypeAll(chore)"],
+    "labels": ["dependencies"],
+    "dependencyDashboard": true,
+    "dependencyDashboardTitle": "Dependency Dashboard",
+    "pre-commit": {
+        "enabled": true
+    },
+    "lockFileMaintenance": {
+        "enabled": true,
+        "schedule": ["before 4am on monday"]
+    },
+    "packageRules": [
+        {
+            "matchManagers": ["cargo"],
+            "groupName": "Rust dependencies",
+            "minimumReleaseAge": "3 days",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        },
+        {
+            "matchManagers": ["github-actions"],
+            "groupName": "GitHub Actions",
+            "schedule": ["every weekend"],
+            "minimumReleaseAge": "3 days",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        },
+        {
+            "matchUpdateTypes": ["lockFileMaintenance"],
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash",
+            "groupName": "lock file maintenance"
+        },
+        {
+            "matchManagers": ["pre-commit"],
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        }
+    ],
+    "rangeStrategy": "bump"
+}
