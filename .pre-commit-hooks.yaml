@@ -1,0 +1,6 @@
+- id: bibsync
+  name: bibsync
+  description: Synchronize BibTeX entries from TeX citation keys
+  entry: bibsync --check
+  language: rust
+  types_or: [tex, bib]
