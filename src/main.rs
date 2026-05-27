@@ -1,7 +1,7 @@
 //! Command-line entry point for the template package.
 
-use clap::Parser;
 use bibsync::greeting;
+use clap::Parser;
 
 /// Print a greeting.
 #[derive(Debug, Parser)]

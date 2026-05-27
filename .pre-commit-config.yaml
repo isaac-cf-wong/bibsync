@@ -22,7 +22,7 @@ repos:
       rev: v1.0
       hooks:
           - id: fmt
-            args: [--all, --check]
+            args: [--all]
             pass_filenames: false
           - id: cargo-check
             pass_filenames: false
