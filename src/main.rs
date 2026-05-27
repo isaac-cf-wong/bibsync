@@ -1,22 +1,125 @@
-//! Command-line entry point for the template package.
+//! Command-line entry point for `bibsync`.
 
-use bibsync::greeting;
-use clap::Parser;
+use bibsync::{ProviderChoice, SyncOptions, pre_commit_hook_manifest, sync_files};
+use clap::{Parser, ValueEnum};
+use std::path::PathBuf;
 
-/// Print a greeting.
+/// Synchronize a BibTeX file from TeX citation keys.
 #[derive(Debug, Parser)]
 #[command(version, about)]
+#[allow(clippy::struct_excessive_bools)]
 struct Cli {
-    /// Name to greet.
-    #[arg(default_value = "world")]
-    name: String,
+    /// TeX files to scan, or a single BibTeX file to update in-place.
+    #[arg(value_name = "FILE")]
+    files: Vec<PathBuf>,
+
+    /// Main BibTeX file to update.
+    #[arg(short, long, value_name = "BIB")]
+    output: Option<PathBuf>,
+
+    /// Read-only BibTeX files containing existing references.
+    #[arg(short = 'r', long = "other", value_name = "BIB")]
+    other_bibliographies: Vec<PathBuf>,
+
+    /// Bibliography provider to use.
+    #[arg(long, value_enum, default_value_t = CliProvider::Auto)]
+    provider: CliProvider,
+
+    /// Do not check existing entries for updates.
+    #[arg(long = "no-update")]
+    no_update: bool,
+
+    /// Regenerate existing entries when a provider can resolve them.
+    #[arg(long)]
+    force_regenerate: bool,
+
+    /// Merge entries found in read-only bibliography files.
+    #[arg(long)]
+    merge_other: bool,
+
+    /// Do not create a .bak file before overwriting the output.
+    #[arg(long = "no-backup")]
+    no_backup: bool,
+
+    /// Check whether the BibTeX file is current without writing changes.
+    #[arg(long)]
+    check: bool,
+
+    /// Print a pre-commit hook manifest for this package.
+    #[arg(long)]
+    print_pre_commit_hook: bool,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CliProvider {
+    Auto,
+    Ads,
+    Inspire,
+}
+
+impl From<CliProvider> for ProviderChoice {
+    fn from(value: CliProvider) -> Self {
+        match value {
+            CliProvider::Auto => Self::Auto,
+            CliProvider::Ads => Self::Ads,
+            CliProvider::Inspire => Self::Inspire,
+        }
+    }
 }
 
 fn main() {
     let cli = Cli::parse();
+    if cli.print_pre_commit_hook {
+        print!("{manifest}", manifest = pre_commit_hook_manifest());
+        return;
+    }
+    if cli.files.is_empty() {
+        eprintln!("error: at least one TeX file or one BibTeX file is required");
+        std::process::exit(2);
+    }
 
-    match greeting(&cli.name) {
-        Ok(message) => println!("{message}"),
+    let options = SyncOptions {
+        output: cli.output,
+        other_bibliographies: cli.other_bibliographies,
+        provider: cli.provider.into(),
+        update_existing: !cli.no_update,
+        force_regenerate: cli.force_regenerate,
+        merge_other: cli.merge_other,
+        backup: !cli.no_backup,
+        check: cli.check,
+    };
+
+    match sync_files(&cli.files, &options) {
+        Ok(report) => {
+            println!("output: {}", report.output.display());
+            if !report.added.is_empty() {
+                println!("added: {}", report.added.join(", "));
+            }
+            if !report.updated.is_empty() {
+                println!("updated: {}", report.updated.join(", "));
+            }
+            if !report.found_in_other.is_empty() {
+                println!(
+                    "found in other bibliography: {}",
+                    report.found_in_other.join(", ")
+                );
+            }
+            if !report.unresolved.is_empty() {
+                println!("unresolved: {}", report.unresolved.join(", "));
+            }
+            if report.changed {
+                if report.check_mode {
+                    eprintln!("bibsync: bibliography is out of date");
+                    std::process::exit(1);
+                }
+                println!("wrote updated bibliography");
+            } else {
+                println!("bibliography is up to date");
+            }
+            if !report.unresolved.is_empty() {
+                std::process::exit(1);
+            }
+        }
         Err(error) => {
             eprintln!("error: {error}");
             std::process::exit(2);

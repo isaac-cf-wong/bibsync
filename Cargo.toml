@@ -10,18 +10,27 @@ license = "BSD-3-Clause"
 repository = "https://github.com/isaac-cf-wong/bibsync"
 homepage = "https://github.com/isaac-cf-wong/bibsync"
 documentation = "https://isaac-cf-wong.github.io/bibsync"
-keywords = ["rust", "github", "template"]
-categories = ["development-tools"]
+keywords = ["bibtex", "latex", "arxiv", "ads", "inspirehep"]
+categories = ["command-line-utilities", "development-tools"]
 exclude = ["/.github", "/docs/template_documentation"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+regex = "1.12"
+reqwest = { version = "0.12", default-features = false, features = [
+  "blocking",
+  "json",
+  "rustls-tls",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 thiserror = "2.0"
 
 [dev-dependencies]
 assert_cmd = "2.0"
 divan = "0.1"
 predicates = "3.1"
+tempfile = "3.23"
 
 [lib]
 name = "bibsync"

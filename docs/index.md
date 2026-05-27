@@ -1,21 +1,75 @@
-# Rust Package Template
+# bibsync
 
-This repository is a starting point for Rust crates that need a library,
-optional CLI, tests, documentation, CI, release automation, and project hygiene
-files.
+`bibsync` synchronizes BibTeX files from citation keys in LaTeX sources. It is
+designed for papers where the citation key can be a stable scholarly identifier,
+especially an arXiv ID:
 
-## Local Checks
+```tex
+\citep{2404.14498}
+\citet{arXiv:2312.00752}
+```
+
+After scanning the TeX source, `bibsync` resolves missing entries through NASA
+ADS or InspireHEP, rewrites the provider's BibTeX entry so the citekey stays the
+same as the TeX citekey, and merges the entry into the target `.bib` file.
 
 ```shell
-cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+bibsync main.tex -o references.bib
 ```
 
-## Example
+## What It Does
 
-```rust
-use bibsync::greeting;
+`bibsync` handles the repetitive part of bibliography maintenance:
 
-assert_eq!(greeting("Ferris").unwrap(), "Hello, Ferris!");
+- Finds citekeys in common LaTeX citation commands such as `\cite`, `\citet`,
+  `\citep`, and related variants.
+- Resolves identifier-like citekeys through NASA ADS and InspireHEP.
+- Preserves arXiv IDs, DOIs, and ADS bibcodes as citekeys when writing BibTeX.
+- Merges generated entries with an existing bibliography instead of replacing
+  the whole file blindly.
+- Checks whether a bibliography is up to date without writing, which makes it
+  suitable for pre-commit hooks.
+
+## Supported Identifiers
+
+NASA ADS can resolve:
+
+- arXiv IDs, for example `1602.03837`
+- DOIs, for example `10.1103/PhysRevLett.116.061102`
+- ADS bibcodes, for example `2016PhRvL.116f1102A`
+
+InspireHEP can resolve:
+
+- arXiv IDs
+- DOIs
+
+Author-year interactive lookup, as provided by `adstex`, is intentionally not
+part of the initial `bibsync` workflow. The current implementation focuses on
+deterministic identifier-based synchronization.
+
+## Quick Start
+
+Install or run the crate, then choose a provider:
+
+```shell
+bibsync main.tex -o references.bib --provider inspire
 ```
+
+If you use NASA ADS, set an API token first:
+
+```shell
+export ADS_API_TOKEN="..."
+bibsync main.tex -o references.bib --provider ads
+```
+
+The default provider mode is `auto`. In that mode, `bibsync` uses NASA ADS when
+`ADS_API_TOKEN` is available and then falls back to InspireHEP.
+
+## Where To Go Next
+
+- Read the [usage guide](user-guide/usage.md) for command-line workflows.
+- Read the [provider guide](user-guide/providers.md) to choose between NASA ADS,
+  InspireHEP, and `auto`.
+- Read the [pre-commit guide](user-guide/pre-commit.md) to enforce synchronized
+  bibliographies in a repository.
+- See the [examples guide](user-guide/examples.md) for tested example files.
