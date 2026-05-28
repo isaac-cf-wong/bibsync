@@ -17,6 +17,11 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use thiserror::Error;
 
+pub mod cli;
+
+#[cfg(feature = "python")]
+mod python;
+
 /// Result alias used by `bibsync`.
 pub type Result<T> = std::result::Result<T, BibsyncError>;
 

@@ -1,0 +1,58 @@
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "bibsync"
+description = "Synchronize BibTeX files from citation keys in LaTeX sources"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "BSD-3-Clause"
+authors = [{ name = "Isaac C. F. Wong" }]
+keywords = ["bibtex", "latex", "arxiv", "ads", "inspirehep"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: BSD License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Text Processing :: Markup :: LaTeX",
+]
+dynamic = ["version"]
+
+[dependency-groups]
+dev = ["ruff>=0.15.12"]
+build = ["maturin>=1.9,<2"]
+
+[project.urls]
+Homepage = "https://github.com/isaac-cf-wong/bibsync"
+Documentation = "https://isaac-cf-wong.github.io/bibsync"
+Repository = "https://github.com/isaac-cf-wong/bibsync"
+Issues = "https://github.com/isaac-cf-wong/bibsync/issues"
+
+[project.scripts]
+bibsync = "bibsync:main"
+
+[tool.maturin]
+features = ["python", "pyo3/extension-module"]
+module-name = "bibsync._bibsync"
+python-source = "python"
+strip = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+fix = true
+lint.extend-select = ["E", "F", "W", "I", "UP", "B", "A", "C4", "RUF", "SIM"]
+lint.ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

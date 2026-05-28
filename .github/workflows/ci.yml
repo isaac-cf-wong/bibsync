@@ -29,6 +29,21 @@ jobs:
             - name: Cache Cargo
               uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2
 
+            - name: Install uv
+              uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+              with:
+                  python-version: "3.13"
+                  enable-cache: "true"
+
+            - name: Install Python dependencies
+              run: uv sync --group dev --frozen
+
+            - name: Run ruff
+              run: uv run --frozen ruff check python
+
+            - name: Check Python formatting
+              run: uv run --frozen ruff format --check python
+
             - name: Check formatting
               run: cargo fmt --all --check
 
