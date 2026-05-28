@@ -146,6 +146,24 @@ pub trait BibliographyProvider {
     ///
     /// Returns an error when the provider request or response handling fails.
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>>;
+
+    /// Resolve several identifier-like citekeys.
+    ///
+    /// Providers can override this to use batch APIs. The default
+    /// implementation calls [`BibliographyProvider::resolve`] for each key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when provider request or response handling fails.
+    fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let mut resolved = BTreeMap::new();
+        for key in keys {
+            if let Some(entry) = self.resolve(key)? {
+                resolved.insert(key.clone(), entry);
+            }
+        }
+        Ok(resolved)
+    }
 }
 
 /// Synchronize a bibliography from TeX or BibTeX input files.
@@ -210,6 +228,9 @@ pub fn sync_files_with_provider(
         other_bibliography.merge(Bibliography::read_optional(path)?);
     }
 
+    let mut to_resolve = Vec::new();
+    let mut key_exists = BTreeMap::new();
+
     for key in keys {
         let exists = bibliography.contains(&key);
         let exists_in_other = other_bibliography.contains(&key);
@@ -246,33 +267,38 @@ pub fn sync_files_with_provider(
             continue;
         }
 
-        match provider.resolve(&key)? {
-            Some(resolved) => {
-                let mut entry = BibEntry::parse(&resolved.bibtex).ok_or_else(|| {
-                    BibsyncError::InvalidProviderBibtex {
-                        provider: resolved.provider,
-                        key: key.clone(),
-                    }
-                })?;
-                entry.key.clone_from(&key);
-                bibliography.upsert(entry);
-                if exists {
-                    if options.force_regenerate || options.update_existing {
-                        report.updated.push(key);
-                    } else {
-                        report.existing.push(key);
-                    }
-                } else {
-                    report.added.push(key);
-                }
+        key_exists.insert(key.clone(), exists);
+        to_resolve.push(key);
+    }
+
+    let resolved_entries = provider.resolve_many(&to_resolve)?;
+    for key in to_resolve {
+        let exists = key_exists.get(&key).copied().unwrap_or(false);
+        let Some(resolved) = resolved_entries.get(&key) else {
+            if exists {
+                report.existing.push(key);
+            } else {
+                report.unresolved.push(key);
             }
-            None => {
-                if exists {
-                    report.existing.push(key);
-                } else {
-                    report.unresolved.push(key);
-                }
+            continue;
+        };
+
+        let mut entry = BibEntry::parse(&resolved.bibtex).ok_or_else(|| {
+            BibsyncError::InvalidProviderBibtex {
+                provider: resolved.provider,
+                key: key.clone(),
             }
+        })?;
+        entry.key.clone_from(&key);
+        bibliography.upsert(entry);
+        if exists {
+            if options.force_regenerate || options.update_existing {
+                report.updated.push(key);
+            } else {
+                report.existing.push(key);
+            }
+        } else {
+            report.added.push(key);
         }
     }
 
@@ -649,6 +675,26 @@ impl BibliographyProvider for ProviderChain {
         }
         Ok(None)
     }
+
+    fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let mut resolved = BTreeMap::new();
+        let mut remaining = keys.to_vec();
+        for provider in &self.providers {
+            if remaining.is_empty() {
+                break;
+            }
+            let provider_resolved = provider.resolve_many(&remaining)?;
+            remaining.retain(|key| {
+                if let Some(entry) = provider_resolved.get(key) {
+                    resolved.insert(key.clone(), entry.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        Ok(resolved)
+    }
 }
 
 /// NASA ADS bibliography provider.
@@ -711,16 +757,25 @@ impl AdsProvider {
             .find_map(|doc| doc.bibcode))
     }
 
-    fn export_bibtex(&self, bibcode: &str) -> Result<Option<String>> {
+    fn export_bibtex_many(&self, bibcodes: &[String]) -> Result<BTreeMap<String, String>> {
         let response: AdsExportResponse = self
             .client
             .post("https://api.adsabs.harvard.edu/v1/export/bibtex")
             .headers(self.headers()?)
-            .json(&json!({ "bibcode": [bibcode] }))
+            .json(&json!({ "bibcode": bibcodes }))
             .send()?
             .error_for_status()?
             .json()?;
-        Ok(nonempty(&response.export))
+        let Some(export) = nonempty(&response.export) else {
+            return Ok(BTreeMap::new());
+        };
+        Ok(split_bib_entries(&export)
+            .into_iter()
+            .filter_map(|entry| {
+                let parsed = BibEntry::parse(entry)?;
+                Some((parsed.key.clone(), parsed.render()))
+            })
+            .collect())
     }
 }
 
@@ -738,7 +793,8 @@ impl BibliographyProvider for AdsProvider {
         let Some(bibcode) = self.bibcode_for_identifier(&identifier)? else {
             return Ok(None);
         };
-        let Some(bibtex) = self.export_bibtex(&bibcode)? else {
+        let mut exported = self.export_bibtex_many(std::slice::from_ref(&bibcode))?;
+        let Some(bibtex) = exported.remove(&bibcode) else {
             return Ok(None);
         };
         Ok(Some(ResolvedEntry {
@@ -746,6 +802,42 @@ impl BibliographyProvider for AdsProvider {
             bibtex,
             provider: self.name(),
         }))
+    }
+
+    fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let mut key_to_bibcode = BTreeMap::new();
+        for key in keys {
+            let identifier = if is_arxiv_id(key) {
+                format!("arXiv:{}", normalize_arxiv_id(key))
+            } else {
+                key.clone()
+            };
+            if let Some(bibcode) = self.bibcode_for_identifier(&identifier)? {
+                key_to_bibcode.insert(key.clone(), bibcode);
+            }
+        }
+
+        let bibcodes = key_to_bibcode
+            .values()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let exported = self.export_bibtex_many(&bibcodes)?;
+        Ok(key_to_bibcode
+            .into_iter()
+            .filter_map(|(key, bibcode)| {
+                let bibtex = exported.get(&bibcode)?.clone();
+                Some((
+                    key,
+                    ResolvedEntry {
+                        canonical_id: bibcode,
+                        bibtex,
+                        provider: self.name(),
+                    },
+                ))
+            })
+            .collect())
     }
 }
 
@@ -820,6 +912,126 @@ impl BibliographyProvider for InspireProvider {
             provider: self.name(),
         }))
     }
+
+    fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let query_parts = keys
+            .iter()
+            .filter_map(|key| {
+                if is_arxiv_id(key) {
+                    Some(format!("arxiv:{}", normalize_arxiv_id(key)))
+                } else if is_doi(key) {
+                    Some(format!("doi:{key}"))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        if query_parts.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+
+        let response: InspireSearchResponse = self
+            .client
+            .get("https://inspirehep.net/api/literature")
+            .header(USER_AGENT, "bibsync/0.1")
+            .query(&[
+                ("q", query_parts.join(" OR ").as_str()),
+                ("size", keys.len().to_string().as_str()),
+            ])
+            .send()?
+            .error_for_status()?
+            .json()?;
+
+        let mut record_by_key = BTreeMap::new();
+        for hit in response.hits.hits {
+            let Some(record_id) = hit
+                .id
+                .or(hit.metadata.control_number.map(|id| id.to_string()))
+            else {
+                continue;
+            };
+            for key in keys {
+                if inspire_hit_matches_key(&hit.metadata, key) {
+                    record_by_key.insert(key.clone(), record_id.clone());
+                }
+            }
+        }
+
+        let mut resolved = BTreeMap::new();
+        for (key, record_id) in record_by_key {
+            let bibtex = self
+                .client
+                .get(format!("https://inspirehep.net/api/literature/{record_id}"))
+                .header(USER_AGENT, "bibsync/0.1")
+                .header(ACCEPT, "application/x-bibtex")
+                .query(&[("format", "bibtex")])
+                .send()?
+                .error_for_status()?
+                .text()?;
+            let Some(bibtex) = nonempty(&bibtex) else {
+                continue;
+            };
+            if !bibtex.trim_start().starts_with('@') {
+                continue;
+            }
+            resolved.insert(
+                key,
+                ResolvedEntry {
+                    canonical_id: record_id,
+                    bibtex,
+                    provider: self.name(),
+                },
+            );
+        }
+        Ok(resolved)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireSearchResponse {
+    hits: InspireHits,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireHits {
+    hits: Vec<InspireHit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireHit {
+    id: Option<String>,
+    metadata: InspireMetadata,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireMetadata {
+    control_number: Option<u64>,
+    #[serde(default)]
+    arxiv_eprints: Vec<InspireValue>,
+    #[serde(default)]
+    dois: Vec<InspireValue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireValue {
+    value: String,
+}
+
+fn inspire_hit_matches_key(metadata: &InspireMetadata, key: &str) -> bool {
+    if is_arxiv_id(key) {
+        let normalized = normalize_arxiv_id(key);
+        return metadata
+            .arxiv_eprints
+            .iter()
+            .any(|eprint| normalize_arxiv_id(&eprint.value) == normalized);
+    }
+    if is_doi(key) {
+        return metadata
+            .dois
+            .iter()
+            .any(|doi| doi.value.eq_ignore_ascii_case(key));
+    }
+    false
 }
 
 fn nonempty(value: &str) -> Option<String> {
