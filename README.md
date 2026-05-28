@@ -38,6 +38,39 @@ NASA ADS and/or InspireHEP, rewrites provider BibTeX entries so the citekey stay
 the key used in TeX, and reports whether the output `.bib` file is current. With
 `--fix`, it writes the merged bibliography.
 
+## Installation
+
+Install the Rust CLI from crates.io:
+
+```shell
+cargo install bibsync
+```
+
+Install the Python package from PyPI:
+
+```shell
+pip install bibsync
+```
+
+The PyPI package includes Python bindings and installs the `bibsync` command.
+Python 3.12 or newer is required.
+
+You can also download a pre-built binary from the
+[GitHub releases page](https://github.com/isaac-cf-wong/bibsync/releases). Pick
+the archive for your platform, extract it, and place the `bibsync` executable
+somewhere on your `PATH`.
+
+To compile from source:
+
+```shell
+git clone https://github.com/isaac-cf-wong/bibsync.git
+cd bibsync
+cargo build --release
+```
+
+The compiled binary is written to `target/release/bibsync` on Unix-like systems
+or `target\release\bibsync.exe` on Windows.
+
 ## Citing
 
 If `bibsync` contributes to a scientific publication, please cite it using the
@@ -84,7 +117,7 @@ bibsync --fix main.tex -o references.bib --provider inspire
 InspireHEP supports arXiv IDs and DOIs. NASA ADS supports arXiv IDs, DOIs, and
 ADS bibcodes.
 
-## Python
+## Python API
 
 `bibsync` can also be installed from PyPI:
 
