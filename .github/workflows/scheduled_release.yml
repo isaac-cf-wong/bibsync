@@ -99,10 +99,12 @@ jobs:
                     NEW_VERSION="${NEW_TAG#v}"
                     NEW_VERSION="$NEW_VERSION" python3 - <<'PY'
                   import os
+                  import re
                   from pathlib import Path
 
-                  cargo_toml = Path("Cargo.toml")
                   version = os.environ["NEW_VERSION"]
+
+                  cargo_toml = Path("Cargo.toml")
                   lines = cargo_toml.read_text(encoding="utf-8").splitlines(keepends=True)
 
                   in_package = False
@@ -124,11 +126,17 @@ jobs:
                       raise SystemExit("Could not find [package] version in Cargo.toml")
 
                   cargo_toml.write_text("".join(lines), encoding="utf-8")
+
+                  readme = Path("README.md")
+                  readme.write_text(
+                      re.sub(r"(?m)^(\s+rev:\s+)v[\d.]+", rf"\g<1>v{version}", readme.read_text(encoding="utf-8")),
+                      encoding="utf-8",
+                  )
                   PY
                     cargo generate-lockfile
 
-                    if ! git diff --quiet -- Cargo.toml Cargo.lock; then
-                      git add Cargo.toml Cargo.lock
+                    if ! git diff --quiet -- Cargo.toml Cargo.lock README.md; then
+                      git add Cargo.toml Cargo.lock README.md
                       git commit -m "chore(release): prepare for $NEW_TAG [skip ci]"
                       git push origin "HEAD:${GITHUB_REF_NAME}"
                     else
