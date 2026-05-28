@@ -49,6 +49,18 @@ struct Cli {
     #[arg(long, conflicts_with = "check")]
     fix: bool,
 
+    /// Cache provider responses and reuse cached entries.
+    #[arg(long)]
+    cache: bool,
+
+    /// Refresh provider responses and update the cache.
+    #[arg(long)]
+    refresh_cache: bool,
+
+    /// Override the cache directory.
+    #[arg(long, value_name = "DIR")]
+    cache_dir: Option<PathBuf>,
+
     /// Print a pre-commit hook manifest for this package.
     #[arg(long)]
     print_pre_commit_hook: bool,
@@ -91,6 +103,9 @@ fn main() {
         merge_other: cli.merge_other,
         backup: !cli.no_backup,
         check: cli.check || !cli.fix,
+        cache: cli.cache,
+        refresh_cache: cli.refresh_cache,
+        cache_dir: cli.cache_dir,
     };
 
     match sync_files(&cli.files, &options) {

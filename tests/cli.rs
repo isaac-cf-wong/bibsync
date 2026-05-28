@@ -58,3 +58,16 @@ fn cli_rejects_check_with_fix() {
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
 }
+
+#[test]
+fn cli_exposes_cache_flags() {
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+
+    command
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--cache"))
+        .stdout(predicate::str::contains("--refresh-cache"))
+        .stdout(predicate::str::contains("--cache-dir"));
+}

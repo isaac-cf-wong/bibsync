@@ -128,6 +128,34 @@ Use `--fix` to write the calculated bibliography:
 bibsync --fix main.tex -o references.bib
 ```
 
+## Cache
+
+Provider requests are network-bound. Use `--cache` to store provider records and
+reuse them on later runs:
+
+```shell
+bibsync --cache main.tex -o references.bib
+bibsync --fix --cache main.tex -o references.bib
+```
+
+Cache entries are keyed by provider and canonical record ID. Mappings from arXiv
+IDs, DOIs, and ADS bibcodes are stored separately, so a citekey such as
+`1602.03837` can be resolved from cache after its provider record is known.
+
+Use `--refresh-cache` to force provider calls and update cached records:
+
+```shell
+bibsync --fix --refresh-cache main.tex -o references.bib
+```
+
+`--refresh-cache` also enables cache writes. It is useful when you want to check
+whether an arXiv preprint now has updated provider metadata. Override the cache
+location with `--cache-dir`:
+
+```shell
+bibsync --cache --cache-dir .bibsync-cache main.tex -o references.bib
+```
+
 ## Backups
 
 When `bibsync` writes over an existing bibliography, it creates a `.bak` file by

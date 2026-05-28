@@ -81,6 +81,25 @@ To update a bibliography in place, pass a single `.bib` file:
 bibsync --fix references.bib --force-regenerate
 ```
 
+## Cache
+
+Use `--cache` to avoid repeated provider API calls:
+
+```shell
+bibsync --cache main.tex -o references.bib
+bibsync --fix --cache main.tex -o references.bib
+```
+
+The cache stores provider records and mappings from arXiv IDs or DOIs to the
+provider's canonical record ID. Use `--refresh-cache` when you want to re-query
+the provider and update cached entries:
+
+```shell
+bibsync --fix --refresh-cache main.tex -o references.bib
+```
+
+Override the cache location with `--cache-dir DIR`.
+
 ## Pre-commit
 
 The repository includes `.pre-commit-hooks.yaml`, so other projects can use
@@ -94,7 +113,7 @@ repos:
       rev: v0.1.0
       hooks:
           - id: bibsync-bin
-            args: [--provider, inspire, --output, references.bib]
+            args: [--cache, --provider, inspire, --output, references.bib]
 ```
 
 The binary hook downloads a platform-specific archive from the GitHub release
@@ -121,7 +140,7 @@ repos:
       rev: v0.1.0
       hooks:
           - id: bibsync-bin
-            args: [--fix, --provider, inspire, --output, references.bib]
+            args: [--fix, --cache, --provider, inspire, --output, references.bib]
 ```
 
 For a project-local hook while developing `bibsync` itself:

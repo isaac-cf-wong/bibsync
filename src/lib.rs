@@ -7,7 +7,7 @@
 use regex::Regex;
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue, USER_AGENT};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -40,6 +40,9 @@ pub enum BibsyncError {
     /// An HTTP header value could not be built.
     #[error("invalid HTTP header value: {0}")]
     InvalidHeader(#[from] reqwest::header::InvalidHeaderValue),
+    /// JSON cache serialization or parsing failed.
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
     /// An input file did not point to any BibTeX output file.
     #[error("could not identify a bibliography file; pass --output")]
     MissingOutput,
@@ -84,6 +87,12 @@ pub struct SyncOptions {
     pub backup: bool,
     /// Compare only; do not write. Pre-commit hooks can use this for validation.
     pub check: bool,
+    /// Read and write provider responses from a local cache.
+    pub cache: bool,
+    /// Ignore cached entries and update the local cache from providers.
+    pub refresh_cache: bool,
+    /// Override the default cache directory.
+    pub cache_dir: Option<PathBuf>,
 }
 
 impl Default for SyncOptions {
@@ -97,6 +106,9 @@ impl Default for SyncOptions {
             merge_other: false,
             backup: true,
             check: false,
+            cache: false,
+            refresh_cache: false,
+            cache_dir: None,
         }
     }
 }
@@ -173,7 +185,8 @@ pub trait BibliographyProvider {
 /// Returns an error when files cannot be read/written, a requested provider
 /// cannot be configured, or a provider request fails.
 pub fn sync_files(files: &[PathBuf], options: &SyncOptions) -> Result<SyncReport> {
-    let provider = ProviderChain::from_choice(options.provider)?;
+    let cache_config = CacheConfig::from_options(options);
+    let provider = ProviderChain::from_choice(options.provider, &cache_config)?;
     sync_files_with_provider(files, options, &provider)
 }
 
@@ -645,18 +658,27 @@ struct ProviderChain {
 }
 
 impl ProviderChain {
-    fn from_choice(choice: ProviderChoice) -> Result<Self> {
+    fn from_choice(choice: ProviderChoice, cache_config: &CacheConfig) -> Result<Self> {
         let providers: Vec<Box<dyn BibliographyProvider>> = match choice {
             ProviderChoice::Auto => {
                 let mut providers: Vec<Box<dyn BibliographyProvider>> = Vec::new();
                 if let Some(ads) = AdsProvider::from_env_optional()? {
-                    providers.push(Box::new(ads));
+                    providers.push(wrap_provider(Box::new(ads), cache_config));
                 }
-                providers.push(Box::new(InspireProvider::new()?));
+                providers.push(wrap_provider(
+                    Box::new(InspireProvider::new()?),
+                    cache_config,
+                ));
                 providers
             }
-            ProviderChoice::Ads => vec![Box::new(AdsProvider::from_env()?)],
-            ProviderChoice::Inspire => vec![Box::new(InspireProvider::new()?)],
+            ProviderChoice::Ads => vec![wrap_provider(
+                Box::new(AdsProvider::from_env()?),
+                cache_config,
+            )],
+            ProviderChoice::Inspire => vec![wrap_provider(
+                Box::new(InspireProvider::new()?),
+                cache_config,
+            )],
         };
         Ok(Self { providers })
     }
@@ -695,6 +717,259 @@ impl BibliographyProvider for ProviderChain {
         }
         Ok(resolved)
     }
+}
+
+#[derive(Clone, Debug)]
+struct CacheConfig {
+    enabled: bool,
+    refresh: bool,
+    root: PathBuf,
+}
+
+impl CacheConfig {
+    fn from_options(options: &SyncOptions) -> Self {
+        let enabled = options.cache || options.refresh_cache;
+        Self {
+            enabled,
+            refresh: options.refresh_cache,
+            root: options.cache_dir.clone().unwrap_or_else(default_cache_dir),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CacheRecord {
+    provider: String,
+    canonical_id: String,
+    bibtex: String,
+    fetched_at_unix_seconds: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct CacheMapping {
+    provider: String,
+    lookup_kind: String,
+    lookup_value: String,
+    canonical_id: String,
+    fetched_at_unix_seconds: u64,
+}
+
+struct CachedProvider {
+    inner: Box<dyn BibliographyProvider>,
+    config: CacheConfig,
+}
+
+fn wrap_provider(
+    provider: Box<dyn BibliographyProvider>,
+    config: &CacheConfig,
+) -> Box<dyn BibliographyProvider> {
+    if config.enabled {
+        Box::new(CachedProvider {
+            inner: provider,
+            config: config.clone(),
+        })
+    } else {
+        provider
+    }
+}
+
+impl BibliographyProvider for CachedProvider {
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
+
+    fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>> {
+        let resolved = self.resolve_many(&[key.to_owned()])?;
+        Ok(resolved.into_values().next())
+    }
+
+    fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let provider = self.inner.name();
+        let mut resolved = BTreeMap::new();
+        let mut misses = Vec::new();
+
+        if self.config.refresh {
+            misses.extend_from_slice(keys);
+        } else {
+            for key in keys {
+                if let Some(entry) = cache_lookup(&self.config.root, provider, key)? {
+                    resolved.insert(key.clone(), entry);
+                } else {
+                    misses.push(key.clone());
+                }
+            }
+        }
+
+        if misses.is_empty() {
+            return Ok(resolved);
+        }
+
+        let fetched = self.inner.resolve_many(&misses)?;
+        for (key, entry) in &fetched {
+            cache_store(&self.config.root, key, entry)?;
+        }
+        resolved.extend(fetched);
+        Ok(resolved)
+    }
+}
+
+fn cache_lookup(root: &Path, provider: &str, key: &str) -> Result<Option<ResolvedEntry>> {
+    let Some((kind, value)) = lookup_parts(key) else {
+        return Ok(None);
+    };
+    let provider_slug = provider_slug(provider);
+    let mapping_path = mapping_path(root, provider_slug, kind, &value);
+    let Some(mapping) = read_json_optional::<CacheMapping>(&mapping_path)? else {
+        return Ok(None);
+    };
+    let record_path = record_path(root, provider_slug, &mapping.canonical_id);
+    let Some(record) = read_json_optional::<CacheRecord>(&record_path)? else {
+        return Ok(None);
+    };
+    Ok(Some(ResolvedEntry {
+        canonical_id: record.canonical_id,
+        bibtex: record.bibtex,
+        provider: provider_name_from_slug(provider_slug),
+    }))
+}
+
+fn cache_store(root: &Path, key: &str, entry: &ResolvedEntry) -> Result<()> {
+    let Some((kind, value)) = lookup_parts(key) else {
+        return Ok(());
+    };
+    let provider_slug = provider_slug(entry.provider);
+    let timestamp = unix_timestamp();
+    let record = CacheRecord {
+        provider: entry.provider.to_owned(),
+        canonical_id: entry.canonical_id.clone(),
+        bibtex: entry.bibtex.clone(),
+        fetched_at_unix_seconds: timestamp,
+    };
+    write_json(
+        &record_path(root, provider_slug, &entry.canonical_id),
+        &record,
+    )?;
+
+    let mapping = CacheMapping {
+        provider: entry.provider.to_owned(),
+        lookup_kind: kind.to_owned(),
+        lookup_value: value.clone(),
+        canonical_id: entry.canonical_id.clone(),
+        fetched_at_unix_seconds: timestamp,
+    };
+    write_json(&mapping_path(root, provider_slug, kind, &value), &mapping)
+}
+
+fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(source) => Err(BibsyncError::Io {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
+fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| BibsyncError::Io {
+            path: parent.to_owned(),
+            source,
+        })?;
+    }
+    let content = serde_json::to_string_pretty(value)?;
+    fs::write(path, format!("{content}\n")).map_err(|source| BibsyncError::Io {
+        path: path.to_owned(),
+        source,
+    })
+}
+
+fn lookup_parts(key: &str) -> Option<(&'static str, String)> {
+    if is_arxiv_id(key) {
+        Some(("arxiv", normalize_arxiv_id(key)))
+    } else if is_doi(key) {
+        Some(("doi", key.trim().to_ascii_lowercase()))
+    } else if is_ads_bibcode(key) {
+        Some(("bibcode", key.trim().to_owned()))
+    } else {
+        None
+    }
+}
+
+fn mapping_path(root: &Path, provider: &str, kind: &str, value: &str) -> PathBuf {
+    root.join(provider)
+        .join("mappings")
+        .join(kind)
+        .join(format!("{}.json", encode_filename(value)))
+}
+
+fn record_path(root: &Path, provider: &str, canonical_id: &str) -> PathBuf {
+    root.join(provider)
+        .join("records")
+        .join(format!("{}.json", encode_filename(canonical_id)))
+}
+
+fn encode_filename(value: &str) -> String {
+    use std::fmt::Write as _;
+
+    value
+        .as_bytes()
+        .iter()
+        .fold(String::new(), |mut encoded, byte| {
+            let _ = write!(encoded, "{byte:02x}");
+            encoded
+        })
+}
+
+fn provider_slug(provider: &str) -> &'static str {
+    match provider {
+        "NASA ADS" => "ads",
+        "InspireHEP" => "inspire",
+        _ => "provider",
+    }
+}
+
+fn provider_name_from_slug(slug: &str) -> &'static str {
+    match slug {
+        "ads" => "NASA ADS",
+        "inspire" => "InspireHEP",
+        _ => "provider",
+    }
+}
+
+fn unix_timestamp() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
+}
+
+fn default_cache_dir() -> PathBuf {
+    if let Ok(dir) = env::var("BIBSYNC_CACHE_DIR") {
+        return PathBuf::from(dir);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(dir) = env::var("LOCALAPPDATA") {
+            return PathBuf::from(dir).join("bibsync");
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(home) = env::var("HOME") {
+            return PathBuf::from(home)
+                .join("Library")
+                .join("Caches")
+                .join("bibsync");
+        }
+    }
+    if let Ok(dir) = env::var("XDG_CACHE_HOME") {
+        return PathBuf::from(dir).join("bibsync");
+    }
+    if let Ok(home) = env::var("HOME") {
+        return PathBuf::from(home).join(".cache").join("bibsync");
+    }
+    PathBuf::from(".bibsync-cache")
 }
 
 /// NASA ADS bibliography provider.
@@ -1061,8 +1336,10 @@ mod tests {
         BibliographyProvider, ProviderChoice, ResolvedEntry, SyncOptions, citation_keys,
         sync_files_with_provider,
     };
+    use std::cell::Cell;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
+    use std::rc::Rc;
     use tempfile::tempdir;
 
     struct FakeProvider {
@@ -1077,6 +1354,26 @@ mod tests {
         fn resolve(&self, key: &str) -> super::Result<Option<ResolvedEntry>> {
             Ok(self.entries.get(key).map(|bibtex| ResolvedEntry {
                 canonical_id: key.to_owned(),
+                bibtex: bibtex.clone(),
+                provider: self.name(),
+            }))
+        }
+    }
+
+    struct CountingProvider {
+        calls: Rc<Cell<usize>>,
+        entries: BTreeMap<String, String>,
+    }
+
+    impl BibliographyProvider for CountingProvider {
+        fn name(&self) -> &'static str {
+            "InspireHEP"
+        }
+
+        fn resolve(&self, key: &str) -> super::Result<Option<ResolvedEntry>> {
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.entries.get(key).map(|bibtex| ResolvedEntry {
+                canonical_id: format!("record-{key}"),
                 bibtex: bibtex.clone(),
                 provider: self.name(),
             }))
@@ -1190,5 +1487,36 @@ mod tests {
                 .expect("read bib")
                 .contains("New")
         );
+    }
+
+    #[test]
+    fn cached_provider_reuses_cached_entry() {
+        let dir = tempdir().expect("tempdir");
+        let calls = Rc::new(Cell::new(0));
+        let provider = CountingProvider {
+            calls: Rc::clone(&calls),
+            entries: BTreeMap::from([(
+                "2404.14498".to_owned(),
+                "@article{x,\n  title = {Cached}\n}".to_owned(),
+            )]),
+        };
+        let cached = super::CachedProvider {
+            inner: Box::new(provider),
+            config: super::CacheConfig {
+                enabled: true,
+                refresh: false,
+                root: dir.path().to_owned(),
+            },
+        };
+
+        let first = cached
+            .resolve_many(&["2404.14498".to_owned()])
+            .expect("first resolve");
+        assert_eq!(first.len(), 1);
+        let second = cached
+            .resolve_many(&["2404.14498".to_owned()])
+            .expect("second resolve");
+        assert_eq!(second.len(), 1);
+        assert_eq!(calls.get(), 1);
     }
 }
