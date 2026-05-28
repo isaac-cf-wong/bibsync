@@ -60,7 +60,19 @@ jobs:
               with:
                   toolchain: stable
 
+            - name: Check previous tag
+              id: previous_tag
+              run: |
+                  PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+                  echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
+                  if [ "$PREVIOUS_TAG" = "none" ]; then
+                    echo "has_previous_tag=false" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "has_previous_tag=true" >> "$GITHUB_OUTPUT"
+                  fi
+
             - name: Determine release version
+              if: ${{ steps.previous_tag.outputs.has_previous_tag == 'true' }}
               id: release_version
               uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
               with:
@@ -70,9 +82,9 @@ jobs:
             - name: Bump crate version and push tag
               id: tag_version
               env:
+                  PREVIOUS_TAG: ${{ steps.previous_tag.outputs.previous_tag }}
                   RELEASE_VERSION: ${{ steps.release_version.outputs.content }}
               run: |
-                  PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
                   if [ "$PREVIOUS_TAG" = "none" ]; then
                     NEW_TAG="v0.1.0"
                   else
