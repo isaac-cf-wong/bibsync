@@ -55,7 +55,19 @@ deterministic identifier-based synchronization.
 
 ## Quick Start
 
-Install or run the crate, then choose a provider:
+Install `bibsync`, then choose a provider:
+
+```shell
+cargo install bibsync
+```
+
+or:
+
+```shell
+pip install bibsync
+```
+
+Then run:
 
 ```shell
 bibsync --fix main.tex -o references.bib --provider inspire
@@ -73,6 +85,8 @@ The default provider mode is `auto`. In that mode, `bibsync` uses NASA ADS when
 
 ## Where To Go Next
 
+- Read the [installation guide](user-guide/installation.md) for Cargo, PyPI,
+  pre-built binaries, and source builds.
 - Read the [usage guide](user-guide/usage.md) for command-line workflows.
 - Read the [provider guide](user-guide/providers.md) to choose between NASA ADS,
   InspireHEP, and `auto`.

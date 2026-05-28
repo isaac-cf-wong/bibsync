@@ -9,6 +9,7 @@ Copyright &copy; 2026 Isaac C. F. Wong
 nav = [
   { "Overview" = "index.md" },
   { "User Guide" = [
+    { "Installation" = "user-guide/installation.md" },
     { "Usage" = "user-guide/usage.md" },
     { "Providers" = "user-guide/providers.md" },
     { "Pre-commit" = "user-guide/pre-commit.md" },
