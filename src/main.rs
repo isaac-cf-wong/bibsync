@@ -9,11 +9,11 @@ use std::path::PathBuf;
 #[command(version, about)]
 #[allow(clippy::struct_excessive_bools)]
 struct Cli {
-    /// TeX files to scan, or a single BibTeX file to update in-place.
+    /// TeX files to scan, or a single BibTeX file to check or update.
     #[arg(value_name = "FILE")]
     files: Vec<PathBuf>,
 
-    /// Main BibTeX file to update.
+    /// Main BibTeX file to check or update.
     #[arg(short, long, value_name = "BIB")]
     output: Option<PathBuf>,
 
@@ -41,9 +41,13 @@ struct Cli {
     #[arg(long = "no-backup")]
     no_backup: bool,
 
-    /// Check whether the BibTeX file is current without writing changes.
+    /// Check whether the BibTeX file is current without writing changes (default).
     #[arg(long)]
     check: bool,
+
+    /// Update the BibTeX file instead of only checking it.
+    #[arg(long, conflicts_with = "check")]
+    fix: bool,
 
     /// Print a pre-commit hook manifest for this package.
     #[arg(long)]
@@ -86,7 +90,7 @@ fn main() {
         force_regenerate: cli.force_regenerate,
         merge_other: cli.merge_other,
         backup: !cli.no_backup,
-        check: cli.check,
+        check: cli.check || !cli.fix,
     };
 
     match sync_files(&cli.files, &options) {
@@ -109,7 +113,9 @@ fn main() {
             }
             if report.changed {
                 if report.check_mode {
-                    eprintln!("bibsync: bibliography is out of date");
+                    eprintln!(
+                        "bibsync: bibliography is out of date; rerun with --fix to update it"
+                    );
                     std::process::exit(1);
                 }
                 println!("wrote updated bibliography");

@@ -3,9 +3,9 @@
 `bibsync` includes a pre-commit hook manifest, `.pre-commit-hooks.yaml`, so other
 repositories can run it before commits.
 
-The hook runs `bibsync --check`. It verifies that the bibliography is already
-synchronized and exits without writing files. When the hook fails, run the same
-command without `--check`, commit the updated `.bib`, and try again.
+By default, the hook runs `bibsync` in check mode. If new entries are needed,
+the hook fails without writing changes. Add `--fix` to the hook arguments when
+you want the hook to update the configured bibliography file.
 
 ## Remote Hook
 
@@ -31,8 +31,8 @@ The source hook is still available when you prefer to build from source:
 
 ```yaml
 repos:
-  - repo: https://github.com/isaac-cf-wong/bibsync
-    rev: v0.1.0
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
       hooks:
           - id: bibsync
             args: [--provider, inspire, --output, references.bib]
@@ -47,11 +47,22 @@ scripts/pre-commit-bibsync --provider inspire --output references.bib <changed f
 which downloads `bibsync` if needed and then runs:
 
 ```shell
-bibsync --check --provider inspire --output references.bib <changed files>
+bibsync --provider inspire --output references.bib <changed files>
 ```
 
 The hook receives changed file paths from pre-commit. In most projects, restrict
 the hook to TeX sources so it runs only when citations may have changed.
+
+For update behavior:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
+      hooks:
+          - id: bibsync-bin
+            args: [--fix, --provider, inspire, --output, references.bib]
+```
 
 ## Local Development Hook
 
@@ -64,7 +75,7 @@ repos:
       hooks:
           - id: bibsync
             name: bibsync
-            entry: cargo run -- --check --provider inspire --output references.bib
+            entry: cargo run -- --fix --provider inspire --output references.bib
             language: system
             files: \.tex$
 ```
@@ -85,10 +96,10 @@ because behavior changes depending on whether `ADS_API_TOKEN` is present.
 
 ## Updating After A Hook Failure
 
-When the hook reports that the bibliography is out of date, run:
+When the hook reports that the bibliography is out of date, update it with:
 
 ```shell
-bibsync --provider inspire --output references.bib main.tex
+bibsync --fix --provider inspire --output references.bib main.tex
 ```
 
 Then review and commit the changed bibliography.
@@ -98,5 +109,5 @@ provider that supports that identifier type. For example, ADS bibcodes require
 NASA ADS:
 
 ```shell
-bibsync --provider ads --output references.bib main.tex
+bibsync --fix --provider ads --output references.bib main.tex
 ```

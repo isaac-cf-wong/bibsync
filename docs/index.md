@@ -11,10 +11,16 @@ especially an arXiv ID:
 
 After scanning the TeX source, `bibsync` resolves missing entries through NASA
 ADS or InspireHEP, rewrites the provider's BibTeX entry so the citekey stays the
-same as the TeX citekey, and merges the entry into the target `.bib` file.
+same as the TeX citekey, and checks whether the target `.bib` file is current.
 
 ```shell
 bibsync main.tex -o references.bib
+```
+
+Add `--fix` to write the merged bibliography:
+
+```shell
+bibsync --fix main.tex -o references.bib
 ```
 
 ## What It Does
@@ -26,9 +32,9 @@ bibsync main.tex -o references.bib
 - Resolves identifier-like citekeys through NASA ADS and InspireHEP.
 - Preserves arXiv IDs, DOIs, and ADS bibcodes as citekeys when writing BibTeX.
 - Merges generated entries with an existing bibliography instead of replacing
-  the whole file blindly.
-- Checks whether a bibliography is up to date without writing, which makes it
-  suitable for pre-commit hooks.
+  the whole file blindly when `--fix` is provided.
+- Checks whether a bibliography is up to date by default, which makes it
+  suitable for safe pre-commit hooks.
 
 ## Supported Identifiers
 
@@ -52,14 +58,14 @@ deterministic identifier-based synchronization.
 Install or run the crate, then choose a provider:
 
 ```shell
-bibsync main.tex -o references.bib --provider inspire
+bibsync --fix main.tex -o references.bib --provider inspire
 ```
 
 If you use NASA ADS, set an API token first:
 
 ```shell
 export ADS_API_TOKEN="..."
-bibsync main.tex -o references.bib --provider ads
+bibsync --fix main.tex -o references.bib --provider ads
 ```
 
 The default provider mode is `auto`. In that mode, `bibsync` uses NASA ADS when

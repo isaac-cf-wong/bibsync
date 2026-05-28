@@ -82,7 +82,7 @@ pub struct SyncOptions {
     pub merge_other: bool,
     /// Create `<output>.bak` before overwriting an existing output file.
     pub backup: bool,
-    /// Compare only; do not write. A pre-commit hook should use this.
+    /// Compare only; do not write. Pre-commit hooks can use this for validation.
     pub check: bool,
 }
 
@@ -837,7 +837,7 @@ pub fn pre_commit_hook_manifest() -> &'static str {
     r"- id: bibsync
   name: bibsync
   description: Synchronize BibTeX entries from TeX citation keys
-  entry: bibsync --check
+  entry: bibsync
   language: rust
   types_or: [tex, bib]
 "

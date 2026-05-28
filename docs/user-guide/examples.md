@@ -16,7 +16,7 @@ detection paper by arXiv ID and DOI:
 Generate its bibliography with:
 
 ```shell
-cargo run -- --provider inspire --no-backup examples/inspire-main.tex
+cargo run -- --fix --provider inspire --no-backup examples/inspire-main.tex
 ```
 
 Because the TeX file contains:
@@ -40,7 +40,7 @@ the output is discovered automatically as `examples/inspire-main.bib`.
 Generate its bibliography with:
 
 ```shell
-cargo run -- --provider ads --no-backup examples/main.tex
+cargo run -- --fix --provider ads --no-backup examples/main.tex
 ```
 
 This writes `examples/main.bib`.
@@ -58,8 +58,8 @@ That keeps the document self-contained when ADS returns `journal = {\prl}`.
 The example commands can also write to ad hoc output files:
 
 ```shell
-cargo run -- --provider inspire --output examples/generated-inspire.bib --no-backup examples/inspire-main.tex
-cargo run -- --provider ads --output examples/generated-ads.bib --no-backup examples/main.tex
+cargo run -- --fix --provider inspire --output examples/generated-inspire.bib --no-backup examples/inspire-main.tex
+cargo run -- --fix --provider ads --output examples/generated-ads.bib --no-backup examples/main.tex
 ```
 
 Those `generated-*.bib` files are ignored by Git because they are demonstration

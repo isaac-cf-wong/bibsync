@@ -81,7 +81,7 @@ available and falls back to InspireHEP.
 For pre-commit hooks shared by collaborators, prefer an explicit provider:
 
 ```shell
-bibsync --provider inspire --check --output references.bib main.tex
+bibsync --provider inspire --output references.bib main.tex
 ```
 
 This avoids requiring every contributor to configure `ADS_API_TOKEN`. If your
