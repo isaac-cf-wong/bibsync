@@ -92,7 +92,9 @@ repos:
 
 The binary hook downloads a platform-specific archive from the GitHub release
 matching `rev` and caches it under pre-commit's cache directory. The source hook
-is still available, but it compiles the Rust crate during hook installation:
+is available for Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64.
+The source hook is still available, but it compiles the Rust crate during hook
+installation:
 
 ```yaml
 repos:

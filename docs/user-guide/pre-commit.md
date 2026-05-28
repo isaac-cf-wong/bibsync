@@ -24,6 +24,9 @@ The binary hook downloads a platform-specific archive from the GitHub release
 matching `rev` and caches it under pre-commit's cache directory. This avoids the
 long first-install compile time of Rust hooks.
 
+Release binaries are published for Linux x86_64, Linux aarch64, macOS x86_64,
+macOS aarch64, and Windows x86_64.
+
 The source hook is still available when you prefer to build from source:
 
 ```yaml
