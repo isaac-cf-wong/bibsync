@@ -65,4 +65,4 @@ if [ ! -x "$binary" ]; then
   chmod +x "$binary"
 fi
 
-exec "$binary" --check "$@"
+exec "$binary" "$@"

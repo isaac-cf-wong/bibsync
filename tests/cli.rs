@@ -23,11 +23,11 @@ fn cli_prints_pre_commit_hook_manifest() {
         .assert()
         .success()
         .stdout(predicate::str::contains("id: bibsync"))
-        .stdout(predicate::str::contains("entry: bibsync --check"));
+        .stdout(predicate::str::contains("entry: bibsync"));
 }
 
 #[test]
-fn cli_check_mode_accepts_current_empty_bib() {
+fn cli_defaults_to_check_mode() {
     let dir = tempdir().expect("tempdir");
     let tex = dir.path().join("main.tex");
     let bib = dir.path().join("refs.bib");
@@ -36,7 +36,6 @@ fn cli_check_mode_accepts_current_empty_bib() {
 
     let mut command = Command::cargo_bin("bibsync").expect("binary exists");
     command
-        .arg("--check")
         .arg("--provider")
         .arg("inspire")
         .arg("--output")
@@ -45,4 +44,17 @@ fn cli_check_mode_accepts_current_empty_bib() {
         .assert()
         .failure()
         .stdout(predicate::str::contains("unresolved: NotAnIdentifier"));
+}
+
+#[test]
+fn cli_rejects_check_with_fix() {
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+
+    command
+        .arg("--check")
+        .arg("--fix")
+        .arg("example.tex")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be used with"));
 }

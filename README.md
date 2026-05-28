@@ -16,22 +16,29 @@ The primary workflow is to cite papers by identifier, especially arXiv ID:
 \citet{arXiv:2312.00752}
 ```
 
-Then run:
+Then check the bibliography:
 
 ```shell
 bibsync main.tex -o references.bib
 ```
 
+To update the file, add `--fix`:
+
+```shell
+bibsync --fix main.tex -o references.bib
+```
+
 `bibsync` scans the TeX file, resolves missing identifier-like citekeys through
 NASA ADS and/or InspireHEP, rewrites provider BibTeX entries so the citekey stays
-the key used in TeX, and merges the result into the output `.bib` file.
+the key used in TeX, and reports whether the output `.bib` file is current. With
+`--fix`, it writes the merged bibliography.
 
 ## Providers
 
 By default `bibsync` tries NASA ADS first and InspireHEP second:
 
 ```shell
-bibsync main.tex -o references.bib --provider auto
+bibsync --fix main.tex -o references.bib --provider auto
 ```
 
 NASA ADS requires an API token:
@@ -43,8 +50,8 @@ export ADS_API_TOKEN="..."
 You can choose a single provider:
 
 ```shell
-bibsync main.tex -o references.bib --provider ads
-bibsync main.tex -o references.bib --provider inspire
+bibsync --fix main.tex -o references.bib --provider ads
+bibsync --fix main.tex -o references.bib --provider inspire
 ```
 
 InspireHEP supports arXiv IDs and DOIs. NASA ADS supports arXiv IDs, DOIs, and
@@ -56,13 +63,13 @@ If the TeX source contains `\bibliography{references}`, `bibsync` can discover
 `references.bib` automatically:
 
 ```shell
-bibsync main.tex
+bibsync --fix main.tex
 ```
 
 Additional read-only bibliographies can be used to avoid duplicating entries:
 
 ```shell
-bibsync main.tex -o references.bib -r shared.bib software.bib
+bibsync --fix main.tex -o references.bib -r shared.bib software.bib
 ```
 
 Use `--merge-other` to copy matching entries from those read-only files into the
@@ -71,7 +78,7 @@ main output file.
 To update a bibliography in place, pass a single `.bib` file:
 
 ```shell
-bibsync references.bib --force-regenerate
+bibsync --fix references.bib --force-regenerate
 ```
 
 ## Pre-commit
@@ -105,12 +112,16 @@ repos:
             args: [--provider, inspire, --output, references.bib]
 ```
 
-The hook runs `bibsync --check`. If the bibliography is out of date, the hook
-fails without writing changes. Run the same command without `--check` to update
-the file:
+By default, the hook checks whether the bibliography is current and fails without
+writing changes. To let the hook update files, add `--fix` to the hook args:
 
-```shell
-bibsync --provider inspire --output references.bib main.tex
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
+      hooks:
+          - id: bibsync-bin
+            args: [--fix, --provider, inspire, --output, references.bib]
 ```
 
 For a project-local hook while developing `bibsync` itself:
@@ -121,7 +132,7 @@ repos:
       hooks:
           - id: bibsync
             name: bibsync
-            entry: cargo run -- --check --provider inspire --output references.bib
+            entry: cargo run -- --fix --provider inspire --output references.bib
             language: system
             files: \.tex$
 ```
