@@ -79,7 +79,22 @@ bibsync references.bib --force-regenerate
 The repository includes `.pre-commit-hooks.yaml`, so other projects can use
 `bibsync` as a pre-commit hook.
 
-Example configuration:
+Use the pre-built binary hook for faster installs:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
+      hooks:
+          - id: bibsync-bin
+            args: [--provider, inspire, --output, references.bib]
+```
+
+The binary hook downloads a platform-specific archive from the GitHub release
+matching `rev` and caches it under pre-commit's cache directory. The source hook
+is available for Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows x86_64.
+The source hook is still available, but it compiles the Rust crate during hook
+installation:
 
 ```yaml
 repos:
