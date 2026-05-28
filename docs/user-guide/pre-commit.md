@@ -17,7 +17,7 @@ repos:
       rev: v0.1.0
       hooks:
           - id: bibsync-bin
-            args: [--provider, inspire, --output, references.bib]
+            args: [--cache, --provider, inspire, --output, references.bib]
 ```
 
 The binary hook downloads a platform-specific archive from the GitHub release
@@ -35,7 +35,7 @@ repos:
       rev: v0.1.0
       hooks:
           - id: bibsync
-            args: [--provider, inspire, --output, references.bib]
+            args: [--cache, --provider, inspire, --output, references.bib]
 ```
 
 This expands to:
@@ -61,7 +61,7 @@ repos:
       rev: v0.1.0
       hooks:
           - id: bibsync-bin
-            args: [--fix, --provider, inspire, --output, references.bib]
+            args: [--fix, --cache, --provider, inspire, --output, references.bib]
 ```
 
 ## Local Development Hook
@@ -75,7 +75,7 @@ repos:
       hooks:
           - id: bibsync
             name: bibsync
-            entry: cargo run -- --fix --provider inspire --output references.bib
+            entry: cargo run -- --fix --cache --provider inspire --output references.bib
             language: system
             files: \.tex$
 ```
@@ -99,7 +99,7 @@ because behavior changes depending on whether `ADS_API_TOKEN` is present.
 When the hook reports that the bibliography is out of date, update it with:
 
 ```shell
-bibsync --fix --provider inspire --output references.bib main.tex
+bibsync --fix --cache --provider inspire --output references.bib main.tex
 ```
 
 Then review and commit the changed bibliography.
@@ -109,5 +109,5 @@ provider that supports that identifier type. For example, ADS bibcodes require
 NASA ADS:
 
 ```shell
-bibsync --fix --provider ads --output references.bib main.tex
+bibsync --fix --cache --provider ads --output references.bib main.tex
 ```
