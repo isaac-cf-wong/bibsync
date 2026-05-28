@@ -27,7 +27,7 @@ classifiers = [
 dynamic = ["version"]
 
 [dependency-groups]
-dev = ["ruff>=0.15.12"]
+dev = ["pytest>=9.0.3", "ruff>=0.15.12", "prek>=0.4.3"]
 build = ["maturin>=1.9,<2"]
 
 [project.urls]
@@ -56,3 +56,6 @@ lint.ignore = ["E501"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]

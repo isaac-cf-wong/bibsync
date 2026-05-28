@@ -38,11 +38,8 @@ jobs:
             - name: Install Python dependencies
               run: uv sync --group dev --frozen
 
-            - name: Run ruff
-              run: uv run --frozen ruff check python
-
-            - name: Check Python formatting
-              run: uv run --frozen ruff format --check python
+            - name: Run Python tests
+              run: uv run --frozen pytest
 
             - name: Check formatting
               run: cargo fmt --all --check
