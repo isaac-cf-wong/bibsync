@@ -4,8 +4,12 @@
 [![Documentation Status](https://github.com/isaac-cf-wong/bibsync/actions/workflows/documentation.yml/badge.svg)](https://isaac-cf-wong.github.io/bibsync/)
 [![Crates.io](https://img.shields.io/crates/v/bibsync)](https://crates.io/crates/bibsync)
 [![Docs.rs](https://docs.rs/bibsync/badge.svg)](https://docs.rs/bibsync)
+[![PyPI Version](https://img.shields.io/pypi/v/bibsync)](https://pypi.org/project/bibsync/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/bibsync)](https://pypi.org/project/bibsync/)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![DOI](https://zenodo.org/badge/1251520994.svg)](https://doi.org/10.5281/zenodo.20422622)
+[![SPEC 0 — Minimum Supported Dependencies](https://img.shields.io/badge/SPEC-0-green?labelColor=%23004811&color=%235CA038)](https://scientific-python.org/specs/spec-0000/)
 
 `bibsync` synchronizes BibTeX files from citation keys in LaTeX sources. It is
 inspired by `adstex`, with provider support for both NASA ADS and InspireHEP.

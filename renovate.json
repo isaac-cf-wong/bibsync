@@ -13,6 +13,44 @@
     },
     "packageRules": [
         {
+            "matchManagers": ["pep621"],
+            "matchDepTypes": ["project.dependencies", "project.optional-dependencies"],
+            "matchUpdateTypes": ["patch", "minor"],
+            "groupName": "runtime minor & patch",
+            "minimumReleaseAge": "3 days",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        },
+        {
+            "matchManagers": ["pep621"],
+            "matchDepTypes": ["dependency-groups"],
+            "matchUpdateTypes": ["patch", "minor"],
+            "groupName": "Python dev dependencies",
+            "minimumReleaseAge": "3 days",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        },
+        {
+            "matchManagers": ["pep621"],
+            "matchDepTypes": ["build-system.requires"],
+            "matchUpdateTypes": ["patch", "minor"],
+            "groupName": "Python build dependencies",
+            "minimumReleaseAge": "3 days",
+            "automerge": true,
+            "automergeType": "pr",
+            "automergeStrategy": "squash"
+        },
+        {
+            "matchDatasources": ["python-version"],
+            "enabled": false
+        },
+        {
+            "matchUpdateTypes": ["major"],
+            "enabled": false
+        },
+        {
             "matchManagers": ["cargo"],
             "groupName": "Rust dependencies",
             "minimumReleaseAge": "3 days",
