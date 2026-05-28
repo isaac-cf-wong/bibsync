@@ -30,6 +30,23 @@ repos:
             args: [--all-targets, --all-features, --, -D, warnings]
             pass_filenames: false
 
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.15.12
+      hooks:
+          - id: ruff
+            args: [--fix, --config=pyproject.toml]
+          - id: ruff-format
+
+    - repo: https://github.com/astral-sh/uv-pre-commit
+      rev: 0.11.12
+      hooks:
+          - id: uv-lock
+
+    - repo: https://github.com/rhysd/actionlint
+      rev: v1.7.12
+      hooks:
+          - id: actionlint
+
     - repo: https://github.com/ComPWA/taplo-pre-commit
       rev: v0.9.3
       hooks:

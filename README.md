@@ -80,6 +80,31 @@ bibsync --fix main.tex -o references.bib --provider inspire
 InspireHEP supports arXiv IDs and DOIs. NASA ADS supports arXiv IDs, DOIs, and
 ADS bibcodes.
 
+## Python
+
+`bibsync` can also be installed from PyPI:
+
+```shell
+pip install bibsync
+```
+
+The PyPI package provides Python bindings backed by the Rust implementation:
+
+```python
+import bibsync
+
+report = bibsync.sync_files(
+    ["main.tex"],
+    output="references.bib",
+    provider="inspire",
+    check=True,
+)
+```
+
+It also installs the `bibsync` command. The command delegates to the same Rust
+CLI implementation as the Cargo-installed binary, so command-line behavior is
+kept in one place.
+
 ## Existing Bibliographies
 
 If the TeX source contains `\bibliography{references}`, `bibsync` can discover
