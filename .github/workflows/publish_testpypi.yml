@@ -37,9 +37,6 @@ jobs:
                   python-version: "3.13"
                   enable-cache: "true"
 
-            - name: Install dependencies
-              run: uv sync --group build --frozen
-
             - name: Set version for publishing
               run: |
                   if [ -n "${{ inputs.tag_name }}" ]; then
@@ -75,8 +72,19 @@ jobs:
                       raise SystemExit("Could not find [package] version in Cargo.toml")
                   PY
 
-            - name: Build distribution
-              run: uv build
+            - name: Build wheel
+              uses: PyO3/maturin-action@v1
+              with:
+                  target: x86_64
+                  args: --release --out dist
+                  manylinux: auto
+                  sccache: true
+
+            - name: Build sdist
+              uses: PyO3/maturin-action@v1
+              with:
+                  command: sdist
+                  args: --out dist
 
             - name: Upload build artifacts
               uses: actions/upload-artifact@v6
