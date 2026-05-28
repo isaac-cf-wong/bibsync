@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "bibsync"
 description = "Synchronize BibTeX files from citation keys in LaTeX sources"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "BSD-3-Clause"
 authors = [{ name = "Isaac C. F. Wong" }]
 keywords = ["bibtex", "latex", "arxiv", "ads", "inspirehep"]
@@ -16,7 +16,6 @@ classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -47,7 +46,7 @@ strip = true
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 fix = true
 lint.extend-select = ["E", "F", "W", "I", "UP", "B", "A", "C4", "RUF", "SIM"]
 lint.ignore = ["E501"]
