@@ -1,6 +1,6 @@
 //! Command-line entry point for `bibsync`.
 
-use bibsync::{ProviderChoice, SyncOptions, pre_commit_hook_manifest, sync_files};
+use bibsync::{ProviderChoice, SyncOptions, UpdateMode, pre_commit_hook_manifest, sync_files};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
@@ -25,13 +25,23 @@ struct Cli {
     #[arg(long, value_enum, default_value_t = CliProvider::Auto)]
     provider: CliProvider,
 
-    /// Do not check existing entries for updates.
-    #[arg(long = "no-update")]
+    /// Skip all existing entries without re-resolving them.
+    ///
+    /// By default only preprint entries are re-checked for publication.
+    #[arg(long = "no-update", conflicts_with = "update_all")]
     no_update: bool,
 
-    /// Regenerate existing entries when a provider can resolve them.
+    /// Re-resolve all existing entries from the provider.
+    #[arg(long = "update-all", conflicts_with = "no_update")]
+    update_all: bool,
+
+    /// Regenerate all existing entries from the provider, overriding --no-update.
     #[arg(long)]
     force_regenerate: bool,
+
+    /// Path to a file listing citekeys to skip, one per line (supports # comments).
+    #[arg(long = "ignore-file", value_name = "FILE")]
+    ignore_file: Option<PathBuf>,
 
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
@@ -86,7 +96,10 @@ impl From<CliProvider> for ProviderChoice {
 fn main() {
     let cli = Cli::parse();
     if cli.print_pre_commit_hook {
-        print!("{manifest}", manifest = pre_commit_hook_manifest());
+        print!(
+            "{manifest}",
+            manifest = pre_commit_hook_manifest(cli.ignore_file.as_deref())
+        );
         return;
     }
     if cli.files.is_empty() {
@@ -94,11 +107,19 @@ fn main() {
         std::process::exit(2);
     }
 
+    let update_mode = if cli.no_update {
+        UpdateMode::Never
+    } else if cli.update_all {
+        UpdateMode::Always
+    } else {
+        UpdateMode::PreprinsOnly
+    };
+
     let options = SyncOptions {
         output: cli.output,
         other_bibliographies: cli.other_bibliographies,
         provider: cli.provider.into(),
-        update_existing: !cli.no_update,
+        update_mode,
         force_regenerate: cli.force_regenerate,
         merge_other: cli.merge_other,
         backup: !cli.no_backup,
@@ -106,6 +127,7 @@ fn main() {
         cache: cli.cache,
         refresh_cache: cli.refresh_cache,
         cache_dir: cli.cache_dir,
+        ignore_file: cli.ignore_file,
     };
 
     match sync_files(&cli.files, &options) {

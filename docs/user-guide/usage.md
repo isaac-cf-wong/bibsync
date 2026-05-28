@@ -68,8 +68,32 @@ bibsync main.tex chapter.tex --output references.bib
 
 ## Existing Bibliographies
 
-Existing entries in the output `.bib` are retained and updated only when
-`bibsync` can resolve the citekey through the selected provider.
+By default, `bibsync` leaves existing entries untouched unless they look like
+unpublished preprints. Preprint entries — those with an `archivePrefix` or
+`eprinttype` field but no `journal` field — are re-queried against the provider
+to detect whether they have since been published. If the provider returns a
+journal record, the entry is updated; if the paper is still a preprint, the
+existing entry is preserved as-is.
+
+Use `--no-update` to skip all existing entries unconditionally:
+
+```shell
+bibsync --fix main.tex -o references.bib --no-update
+```
+
+Use `--update-all` to re-resolve every existing entry from the provider,
+equivalent to the old default behavior:
+
+```shell
+bibsync --fix main.tex -o references.bib --update-all
+```
+
+Use `--force-regenerate` to re-resolve all existing entries and overwrite them
+with fresh provider output regardless of whether they appear to be preprints:
+
+```shell
+bibsync --fix references.bib --force-regenerate
+```
 
 Additional read-only bibliographies can be passed with `--other`:
 
@@ -87,6 +111,27 @@ Use `--merge-other` to copy matching entries into the output file:
 bibsync --fix main.tex -o references.bib --other shared.bib --merge-other
 ```
 
+## Ignoring Specific Entries
+
+To prevent `bibsync` from touching certain entries — for example, manually
+curated book or thesis records — list their citekeys in an ignore file:
+
+```text
+# .bibsyncignore
+knuth1997art
+smith2024thesis
+```
+
+Each line is one citekey. Lines starting with `#` are treated as comments.
+Pass the file with `--ignore-file`:
+
+```shell
+bibsync --fix main.tex -o references.bib --ignore-file .bibsyncignore
+```
+
+Ignored citekeys are never sent to any provider and their existing bib entries
+are never modified.
+
 ## Updating A BibTeX File
 
 Passing a single `.bib` file uses the existing keys in that bibliography as the
@@ -103,7 +148,7 @@ scanning TeX files. Add `--fix` to refresh the file:
 bibsync --fix references.bib
 ```
 
-Use `--force-regenerate` to rewrite existing entries from provider output:
+Use `--force-regenerate` to rewrite all existing entries from provider output:
 
 ```shell
 bibsync --fix references.bib --force-regenerate
@@ -142,15 +187,19 @@ Cache entries are keyed by provider and canonical record ID. Mappings from arXiv
 IDs, DOIs, and ADS bibcodes are stored separately, so a citekey such as
 `1602.03837` can be resolved from cache after its provider record is known.
 
-Use `--refresh-cache` to force provider calls and update cached records:
+Preprint entries that are re-checked for publication always bypass the cache and
+fetch a fresh result from the provider. This ensures `bibsync` sees the latest
+publication status regardless of what is stored locally. The fresh result is
+written back to the cache afterwards.
+
+Use `--refresh-cache` to force provider calls and update cached records for all
+entries:
 
 ```shell
 bibsync --fix --refresh-cache main.tex -o references.bib
 ```
 
-`--refresh-cache` also enables cache writes. It is useful when you want to check
-whether an arXiv preprint now has updated provider metadata. Override the cache
-location with `--cache-dir`:
+Override the cache location with `--cache-dir`:
 
 ```shell
 bibsync --cache --cache-dir .bibsync-cache main.tex -o references.bib

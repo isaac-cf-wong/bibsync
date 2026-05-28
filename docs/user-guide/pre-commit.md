@@ -38,18 +38,6 @@ repos:
             args: [--cache, --provider, inspire, --output, references.bib]
 ```
 
-This expands to:
-
-```shell
-scripts/pre-commit-bibsync --provider inspire --output references.bib <changed files>
-```
-
-which downloads `bibsync` if needed and then runs:
-
-```shell
-bibsync --provider inspire --output references.bib <changed files>
-```
-
 The hook receives changed file paths from pre-commit. In most projects, restrict
 the hook to TeX sources so it runs only when citations may have changed.
 
@@ -62,6 +50,28 @@ repos:
       hooks:
           - id: bibsync-bin
             args: [--fix, --cache, --provider, inspire, --output, references.bib]
+```
+
+To skip specific citekeys such as manually curated books or theses, add an
+`--ignore-file` argument pointing to a `.bibsyncignore` file in the repository:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
+      hooks:
+          - id: bibsync-bin
+            args:
+                [
+                    --fix,
+                    --cache,
+                    --provider,
+                    inspire,
+                    --output,
+                    references.bib,
+                    --ignore-file,
+                    .bibsyncignore,
+                ]
 ```
 
 ## Local Development Hook

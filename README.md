@@ -81,6 +81,37 @@ To update a bibliography in place, pass a single `.bib` file:
 bibsync --fix references.bib --force-regenerate
 ```
 
+### Update Behavior
+
+By default `bibsync` leaves published entries untouched. Only entries that look
+like unpublished preprints — those with an `archivePrefix` or `eprinttype` field
+but no `journal` field — are re-queried to check whether they have been
+published. If so, the entry is updated; otherwise it is preserved.
+
+| Flag                 | Behavior                                      |
+| -------------------- | --------------------------------------------- |
+| _(default)_          | Re-check preprints; skip published entries    |
+| `--no-update`        | Skip all existing entries                     |
+| `--update-all`       | Re-resolve all existing entries               |
+| `--force-regenerate` | Re-resolve and overwrite all existing entries |
+
+### Ignoring Entries
+
+To exclude specific entries from all resolution — for example, books or theses
+you have curated by hand — list their citekeys in a `.bibsyncignore` file:
+
+```text
+# .bibsyncignore
+knuth1997art
+smith2024thesis
+```
+
+Pass the file with `--ignore-file`:
+
+```shell
+bibsync --fix main.tex -o references.bib --ignore-file .bibsyncignore
+```
+
 ## Cache
 
 Use `--cache` to avoid repeated provider API calls:
@@ -91,8 +122,9 @@ bibsync --fix --cache main.tex -o references.bib
 ```
 
 The cache stores provider records and mappings from arXiv IDs or DOIs to the
-provider's canonical record ID. Use `--refresh-cache` when you want to re-query
-the provider and update cached entries:
+provider's canonical record ID. Preprint entries that are re-checked for
+publication always bypass the cache and fetch a fresh result, then write it back.
+Use `--refresh-cache` to force a fresh fetch for all entries:
 
 ```shell
 bibsync --fix --refresh-cache main.tex -o references.bib
@@ -141,6 +173,27 @@ repos:
       hooks:
           - id: bibsync-bin
             args: [--fix, --cache, --provider, inspire, --output, references.bib]
+```
+
+To skip manually curated entries, add `--ignore-file`:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.1.0
+      hooks:
+          - id: bibsync-bin
+            args:
+                [
+                    --fix,
+                    --cache,
+                    --provider,
+                    inspire,
+                    --output,
+                    references.bib,
+                    --ignore-file,
+                    .bibsyncignore,
+                ]
 ```
 
 For a project-local hook while developing `bibsync` itself:

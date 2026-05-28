@@ -67,6 +67,19 @@ pub enum ProviderChoice {
     Inspire,
 }
 
+/// Controls how existing bibliography entries are handled during synchronization.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum UpdateMode {
+    /// Re-resolve preprint entries to check whether they have been published;
+    /// leave all other existing entries unchanged.
+    #[default]
+    PreprinsOnly,
+    /// Skip all existing entries without re-resolving them.
+    Never,
+    /// Re-resolve all existing entries from the provider.
+    Always,
+}
+
 /// Options controlling a synchronization run.
 #[derive(Clone, Debug)]
 #[allow(clippy::struct_excessive_bools)]
@@ -77,9 +90,9 @@ pub struct SyncOptions {
     pub other_bibliographies: Vec<PathBuf>,
     /// Provider selection.
     pub provider: ProviderChoice,
-    /// Update existing entries when a provider can resolve them.
-    pub update_existing: bool,
-    /// Regenerate existing entries even when their resolved identifier is unchanged.
+    /// Controls which existing entries are re-resolved.
+    pub update_mode: UpdateMode,
+    /// Regenerate all existing entries from the provider, overriding `update_mode`.
     pub force_regenerate: bool,
     /// Copy entries from read-only bibliography files into the output file.
     pub merge_other: bool,
@@ -93,6 +106,8 @@ pub struct SyncOptions {
     pub refresh_cache: bool,
     /// Override the default cache directory.
     pub cache_dir: Option<PathBuf>,
+    /// Path to a file listing citekeys to skip, one per line.
+    pub ignore_file: Option<PathBuf>,
 }
 
 impl Default for SyncOptions {
@@ -101,7 +116,7 @@ impl Default for SyncOptions {
             output: None,
             other_bibliographies: Vec::new(),
             provider: ProviderChoice::Auto,
-            update_existing: true,
+            update_mode: UpdateMode::default(),
             force_regenerate: false,
             merge_other: false,
             backup: true,
@@ -109,6 +124,7 @@ impl Default for SyncOptions {
             cache: false,
             refresh_cache: false,
             cache_dir: None,
+            ignore_file: None,
         }
     }
 }
@@ -158,6 +174,18 @@ pub trait BibliographyProvider {
     ///
     /// Returns an error when the provider request or response handling fails.
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>>;
+
+    /// Resolve several identifier-like citekeys, bypassing any cache layer.
+    ///
+    /// Used for preprint entries that need a fresh fetch to detect publication.
+    /// The default implementation delegates to [`BibliographyProvider::resolve_many`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when any provider request or response handling fails.
+    fn resolve_many_fresh(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        self.resolve_many(keys)
+    }
 
     /// Resolve several identifier-like citekeys.
     ///
@@ -241,16 +269,40 @@ pub fn sync_files_with_provider(
         other_bibliography.merge(Bibliography::read_optional(path)?);
     }
 
-    let mut to_resolve = Vec::new();
-    let mut key_exists = BTreeMap::new();
+    let ignore_set = if let Some(ref path) = options.ignore_file {
+        load_ignore_set(path)?
+    } else {
+        BTreeSet::new()
+    };
+
+    let mut to_resolve: Vec<String> = Vec::new();
+    // Preprint keys re-checked for publication; bypass the cache layer.
+    let mut to_resolve_fresh: Vec<String> = Vec::new();
+    let mut key_exists: BTreeMap<String, bool> = BTreeMap::new();
 
     for key in keys {
+        if ignore_set.contains(&key) {
+            if bibliography.contains(&key) {
+                report.existing.push(key);
+            }
+            continue;
+        }
+
         let exists = bibliography.contains(&key);
         let exists_in_other = other_bibliography.contains(&key);
 
-        if exists && !options.update_existing {
-            report.existing.push(key);
-            continue;
+        if exists {
+            let is_preprint = bibliography.entry(&key).is_some_and(BibEntry::is_preprint);
+            let should_resolve = options.force_regenerate
+                || match options.update_mode {
+                    UpdateMode::Never => false,
+                    UpdateMode::PreprinsOnly => is_preprint,
+                    UpdateMode::Always => true,
+                };
+            if !should_resolve {
+                report.existing.push(key);
+                continue;
+            }
         }
 
         if exists_in_other && !exists {
@@ -265,12 +317,6 @@ pub fn sync_files_with_provider(
             continue;
         }
 
-        let should_resolve = !exists || options.update_existing;
-        if !should_resolve {
-            report.existing.push(key);
-            continue;
-        }
-
         if !is_supported_identifier(&key) {
             if exists {
                 report.existing.push(key);
@@ -280,18 +326,34 @@ pub fn sync_files_with_provider(
             continue;
         }
 
+        // Route preprint keys through a fresh (cache-bypassing) resolve so we
+        // always get an up-to-date publication status from the provider.
+        let use_fresh = exists
+            && !options.force_regenerate
+            && options.update_mode == UpdateMode::PreprinsOnly
+            && bibliography.entry(&key).is_some_and(BibEntry::is_preprint);
+
         key_exists.insert(key.clone(), exists);
-        to_resolve.push(key);
+        if use_fresh {
+            to_resolve_fresh.push(key);
+        } else {
+            to_resolve.push(key);
+        }
     }
 
-    let resolved_entries = provider.resolve_many(&to_resolve)?;
-    for key in to_resolve {
-        let exists = key_exists.get(&key).copied().unwrap_or(false);
-        let Some(resolved) = resolved_entries.get(&key) else {
+    let mut resolved_entries = provider.resolve_many(&to_resolve)?;
+    resolved_entries.extend(provider.resolve_many_fresh(&to_resolve_fresh)?);
+
+    let preprint_refresh_keys: BTreeSet<&str> =
+        to_resolve_fresh.iter().map(String::as_str).collect();
+
+    for key in to_resolve.iter().chain(to_resolve_fresh.iter()) {
+        let exists = key_exists.get(key).copied().unwrap_or(false);
+        let Some(resolved) = resolved_entries.get(key) else {
             if exists {
-                report.existing.push(key);
+                report.existing.push(key.clone());
             } else {
-                report.unresolved.push(key);
+                report.unresolved.push(key.clone());
             }
             continue;
         };
@@ -302,16 +364,20 @@ pub fn sync_files_with_provider(
                 key: key.clone(),
             }
         })?;
-        entry.key.clone_from(&key);
+        entry.key.clone_from(key);
+
+        // For preprint refresh: skip the upsert if still a preprint — the
+        // entry is only updated when the provider confirms it is now published.
+        if preprint_refresh_keys.contains(key.as_str()) && entry.is_preprint() {
+            report.existing.push(key.clone());
+            continue;
+        }
+
         bibliography.upsert(entry);
         if exists {
-            if options.force_regenerate || options.update_existing {
-                report.updated.push(key);
-            } else {
-                report.existing.push(key);
-            }
+            report.updated.push(key.clone());
         } else {
-            report.added.push(key);
+            report.added.push(key.clone());
         }
     }
 
@@ -464,6 +530,17 @@ impl BibEntry {
             self.key,
             indent_body(&self.body)
         )
+    }
+
+    /// Returns true if the entry appears to be an unpublished preprint.
+    ///
+    /// Heuristic: the body contains an arXiv archive marker (`archiveprefix`
+    /// or `eprinttype`) but no `journal` field, which would indicate the
+    /// preprint has since been published in a peer-reviewed venue.
+    fn is_preprint(&self) -> bool {
+        let body_lower = self.body.to_lowercase();
+        (body_lower.contains("archiveprefix") || body_lower.contains("eprinttype"))
+            && !body_lower.contains("journal")
     }
 }
 
@@ -619,6 +696,16 @@ fn read_to_string_optional(path: &Path) -> Result<String> {
 
 fn is_supported_identifier(key: &str) -> bool {
     is_arxiv_id(key) || is_doi(key) || is_ads_bibcode(key)
+}
+
+fn load_ignore_set(path: &Path) -> Result<BTreeSet<String>> {
+    let content = read_to_string_optional(path)?;
+    Ok(content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(String::from)
+        .collect())
 }
 
 fn is_arxiv_id(key: &str) -> bool {
@@ -810,6 +897,14 @@ impl BibliographyProvider for CachedProvider {
         }
         resolved.extend(fetched);
         Ok(resolved)
+    }
+
+    fn resolve_many_fresh(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
+        let fetched = self.inner.resolve_many(keys)?;
+        for (key, entry) in &fetched {
+            cache_store(&self.config.root, key, entry)?;
+        }
+        Ok(fetched)
     }
 }
 
@@ -1319,15 +1414,19 @@ fn nonempty(value: &str) -> Option<String> {
 }
 
 /// Return a pre-commit hook manifest snippet for this repository.
+///
+/// When `ignore_file` is provided it is appended to the hook `entry` as
+/// `--ignore-file <path>` so the hook picks up the ignore list automatically.
 #[must_use]
-pub fn pre_commit_hook_manifest() -> &'static str {
-    r"- id: bibsync
-  name: bibsync
-  description: Synchronize BibTeX entries from TeX citation keys
-  entry: bibsync
-  language: rust
-  types_or: [tex, bib]
-"
+pub fn pre_commit_hook_manifest(ignore_file: Option<&Path>) -> String {
+    let entry = if let Some(path) = ignore_file {
+        format!("bibsync --ignore-file {}", path.display())
+    } else {
+        "bibsync".to_owned()
+    };
+    format!(
+        "- id: bibsync\n  name: bibsync\n  description: Synchronize BibTeX entries from TeX citation keys\n  entry: {entry}\n  language: rust\n  types_or: [tex, bib]\n"
+    )
 }
 
 #[cfg(test)]
