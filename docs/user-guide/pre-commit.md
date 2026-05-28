@@ -9,18 +9,39 @@ command without `--check`, commit the updated `.bib`, and try again.
 
 ## Remote Hook
 
-Use the repository as a normal pre-commit hook source:
+Use the pre-built binary hook for faster installation:
 
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
       rev: v0.1.0
       hooks:
+          - id: bibsync-bin
+            args: [--provider, inspire, --output, references.bib]
+```
+
+The binary hook downloads a platform-specific archive from the GitHub release
+matching `rev` and caches it under pre-commit's cache directory. This avoids the
+long first-install compile time of Rust hooks.
+
+The source hook is still available when you prefer to build from source:
+
+```yaml
+repos:
+  - repo: https://github.com/isaac-cf-wong/bibsync
+    rev: v0.1.0
+      hooks:
           - id: bibsync
             args: [--provider, inspire, --output, references.bib]
 ```
 
 This expands to:
+
+```shell
+scripts/pre-commit-bibsync --provider inspire --output references.bib <changed files>
+```
+
+which downloads `bibsync` if needed and then runs:
 
 ```shell
 bibsync --check --provider inspire --output references.bib <changed files>
