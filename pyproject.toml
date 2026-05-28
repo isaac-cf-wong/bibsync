@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.9,<2"]
+requires = ["maturin>=1.13.3,<2"]
 build-backend = "maturin"
 
 [project]
@@ -28,7 +28,7 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = ["pytest>=9.0.3", "ruff>=0.15.12", "prek>=0.4.3"]
-build = ["maturin>=1.9,<2"]
+build = ["maturin>=1.13.3,<2"]
 
 [project.urls]
 Homepage = "https://github.com/isaac-cf-wong/bibsync"

@@ -19,7 +19,7 @@ dev = [
 [package.metadata]
 
 [package.metadata.requires-dev]
-build = [{ name = "maturin", specifier = ">=1.9,<2" }]
+build = [{ name = "maturin", specifier = ">=1.13.3,<2" }]
 dev = [
     { name = "prek", specifier = ">=0.4.3" },
     { name = "pytest", specifier = ">=9.0.3" },
