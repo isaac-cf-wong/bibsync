@@ -5,6 +5,7 @@
 [![Crates.io](https://img.shields.io/crates/v/bibsync)](https://crates.io/crates/bibsync)
 [![Docs.rs](https://docs.rs/bibsync/badge.svg)](https://docs.rs/bibsync)
 [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/1251520994.svg)](https://doi.org/10.5281/zenodo.20422622)
 
 `bibsync` synchronizes BibTeX files from citation keys in LaTeX sources. It is
 inspired by `adstex`, with provider support for both NASA ADS and InspireHEP.
@@ -32,6 +33,28 @@ bibsync --fix main.tex -o references.bib
 NASA ADS and/or InspireHEP, rewrites provider BibTeX entries so the citekey stays
 the key used in TeX, and reports whether the output `.bib` file is current. With
 `--fix`, it writes the merged bibliography.
+
+## Citing
+
+If `bibsync` contributes to a scientific publication, please cite it using the
+Zenodo record:
+
+[https://doi.org/10.5281/zenodo.20422622](https://doi.org/10.5281/zenodo.20422622)
+
+Citation formats including BibTeX can be exported directly from the Zenodo page.
+For convenience, you can also use:
+
+```bibtex
+@software{wong2026bibsync,
+  author  = {Wong, Isaac C. F.},
+  title   = {bibsync: A Rust package to automatically resolve, synchronize, and validate LaTeX citations across BibTeX databases},
+  version = {v0.2.0},
+  year    = {2026},
+  month   = may,
+  doi     = {10.5281/zenodo.20422622},
+  url     = {https://doi.org/10.5281/zenodo.20422622}
+}
+```
 
 ## Providers
 
