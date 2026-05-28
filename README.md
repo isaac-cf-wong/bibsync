@@ -227,7 +227,7 @@ Use the pre-built binary hook for faster installs:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.2.0
+      rev: v0.3.0
       hooks:
           - id: bibsync-bin
             args: [--cache, --provider, inspire, --output, references.bib]
@@ -242,7 +242,7 @@ installation:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.2.0
+      rev: v0.3.0
       hooks:
           - id: bibsync
             args: [--provider, inspire, --output, references.bib]
@@ -254,7 +254,7 @@ writing changes. To let the hook update files, add `--fix` to the hook args:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.2.0
+      rev: v0.3.0
       hooks:
           - id: bibsync-bin
             args: [--fix, --cache, --provider, inspire, --output, references.bib]
@@ -265,7 +265,7 @@ To skip manually curated entries, add `--ignore-file`:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.2.0
+      rev: v0.3.0
       hooks:
           - id: bibsync-bin
             args:
