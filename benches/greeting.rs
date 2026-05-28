@@ -6,5 +6,5 @@ fn main() {
 
 #[divan::bench]
 fn pre_commit_manifest() {
-    let _ = bibsync::pre_commit_hook_manifest();
+    let _ = bibsync::pre_commit_hook_manifest(None);
 }
