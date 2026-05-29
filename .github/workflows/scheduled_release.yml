@@ -403,7 +403,6 @@ jobs:
                   files: |
                       dist/*.tar.gz
                       dist/*.zip
-                      dist/*.whl
 
     publish:
         needs: [create_tag, release]
