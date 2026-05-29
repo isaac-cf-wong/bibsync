@@ -94,6 +94,17 @@ fn sync_files_py<'py>(
     dict.set_item("existing", report.existing)?;
     dict.set_item("found_in_other", report.found_in_other)?;
     dict.set_item("unresolved", report.unresolved)?;
+    let unresolved_details = report
+        .unresolved_details
+        .into_iter()
+        .map(|detail| {
+            let item = PyDict::new(py);
+            item.set_item("key", detail.key)?;
+            item.set_item("reason", detail.reason.to_string())?;
+            Ok(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    dict.set_item("unresolved_details", unresolved_details)?;
     dict.set_item("changed", report.changed)?;
     dict.set_item("check_mode", report.check_mode)?;
     Ok(dict)

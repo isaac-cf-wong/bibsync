@@ -36,21 +36,57 @@ pub enum BibsyncError {
         /// The underlying I/O error.
         source: io::Error,
     },
+    /// An expected input file was not found.
+    #[error("{role} not found: {path}")]
+    MissingInput {
+        /// File path associated with the failure.
+        path: PathBuf,
+        /// User-facing description of the missing input.
+        role: &'static str,
+    },
     /// An HTTP request failed.
     #[error("HTTP request failed: {0}")]
     Http(#[from] reqwest::Error),
+    /// A provider request failed while resolving a specific key.
+    #[error("{provider} request failed while resolving {key}: {source}")]
+    ProviderRequest {
+        /// Provider name.
+        provider: &'static str,
+        /// Citekey or identifier being resolved.
+        key: String,
+        /// The underlying request error.
+        source: reqwest::Error,
+    },
     /// NASA ADS was selected without an API token.
     #[error("NASA ADS requires ADS_API_TOKEN")]
     MissingAdsToken,
     /// An HTTP header value could not be built.
     #[error("invalid HTTP header value: {0}")]
     InvalidHeader(#[from] reqwest::header::InvalidHeaderValue),
-    /// JSON cache serialization or parsing failed.
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
+    /// JSON cache parsing failed.
+    #[error("{path}: invalid JSON cache file: {source}")]
+    Json {
+        /// Cache file path associated with the failure.
+        path: PathBuf,
+        /// The underlying JSON error.
+        source: serde_json::Error,
+    },
+    /// JSON cache serialization failed.
+    #[error("could not serialize JSON cache record: {0}")]
+    JsonSerialization(#[from] serde_json::Error),
     /// An input file did not point to any BibTeX output file.
-    #[error("could not identify a bibliography file; pass --output")]
+    #[error(
+        "could not identify a bibliography file; pass --output or add a \\bibliography{{...}} command"
+    )]
     MissingOutput,
+    /// A bibliography file could not be parsed.
+    #[error("{path}: invalid BibTeX: {message}")]
+    InvalidBibtex {
+        /// File path associated with the failure.
+        path: PathBuf,
+        /// User-facing parse diagnostic.
+        message: String,
+    },
     /// A provider returned an invalid BibTeX payload.
     #[error("{provider} did not return a usable BibTeX entry for {key}")]
     InvalidProviderBibtex {
@@ -149,10 +185,57 @@ pub struct SyncReport {
     pub found_in_other: Vec<String>,
     /// Citekeys that could not be resolved.
     pub unresolved: Vec<String>,
+    /// Detailed diagnostics for citekeys that could not be resolved.
+    pub unresolved_details: Vec<UnresolvedCitation>,
     /// Whether the output file content changed.
     pub changed: bool,
     /// Whether changes were only reported because check mode was enabled.
     pub check_mode: bool,
+}
+
+/// Diagnostic for one citekey that could not be resolved.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnresolvedCitation {
+    /// Citekey or identifier that could not be resolved.
+    pub key: String,
+    /// Reason the key could not be resolved automatically.
+    pub reason: UnresolvedReason,
+}
+
+/// Reason a citekey could not be resolved.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnresolvedReason {
+    /// The key is not an arXiv ID, DOI, or ADS bibcode.
+    UnsupportedIdentifier,
+    /// The selected provider did not return a matching entry.
+    ProviderNoMatch,
+}
+
+impl UnresolvedReason {
+    fn explanation(self) -> &'static str {
+        match self {
+            Self::UnsupportedIdentifier => {
+                "unsupported identifier format; use an arXiv ID, DOI, or ADS bibcode, or add the entry to the bibliography or ignore file"
+            }
+            Self::ProviderNoMatch => {
+                "provider returned no matching BibTeX entry; check the citekey, choose a provider that supports it, or add the entry manually"
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for UnresolvedReason {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.explanation())
+    }
+}
+
+impl SyncReport {
+    fn push_unresolved(&mut self, key: String, reason: UnresolvedReason) {
+        self.unresolved.push(key.clone());
+        self.unresolved_details
+            .push(UnresolvedCitation { key, reason });
+    }
 }
 
 /// A resolved BibTeX entry.
@@ -241,7 +324,7 @@ pub fn sync_files_with_provider(
     let bib_update_mode = files.len() == 1 && has_extension(&files[0], "bib");
     let (keys, output, discovered_other) = if bib_update_mode {
         let output = files[0].clone();
-        let bib = Bibliography::read_optional(&output)?;
+        let bib = Bibliography::read_existing(&output, "bibliography input")?;
         (bib.keys(), output, Vec::new())
     } else {
         let tex_scan = scan_tex_files(files)?;
@@ -268,10 +351,10 @@ pub fn sync_files_with_provider(
     };
 
     let original = read_to_string_optional(&output)?;
-    let mut bibliography = Bibliography::parse(&original);
+    let mut bibliography = Bibliography::parse_path(&output, &original)?;
     let mut other_bibliography = Bibliography::default();
     for path in &other_paths {
-        other_bibliography.merge(Bibliography::read_optional(path)?);
+        other_bibliography.merge(Bibliography::read_existing(path, "read-only bibliography")?);
     }
 
     let ignore_set = if let Some(ref path) = options.ignore_file {
@@ -326,7 +409,7 @@ pub fn sync_files_with_provider(
             if exists {
                 report.existing.push(key);
             } else {
-                report.unresolved.push(key);
+                report.push_unresolved(key, UnresolvedReason::UnsupportedIdentifier);
             }
             continue;
         }
@@ -358,7 +441,7 @@ pub fn sync_files_with_provider(
             if exists {
                 report.existing.push(key.clone());
             } else {
-                report.unresolved.push(key.clone());
+                report.push_unresolved(key.clone(), UnresolvedReason::ProviderNoMatch);
             }
             continue;
         };
@@ -413,6 +496,9 @@ pub fn sync_files_with_provider(
     report.existing.sort();
     report.found_in_other.sort();
     report.unresolved.sort();
+    report
+        .unresolved_details
+        .sort_by(|left, right| left.key.cmp(&right.key));
     Ok(report)
 }
 
@@ -556,27 +642,38 @@ struct Bibliography {
 }
 
 impl Bibliography {
-    fn read_optional(path: &Path) -> Result<Self> {
-        Ok(Self::parse(&read_to_string_optional(path)?))
+    fn read_existing(path: &Path, role: &'static str) -> Result<Self> {
+        Self::parse_path(path, &read_to_string_existing(path, role)?)
     }
 
-    fn parse(input: &str) -> Self {
+    fn parse_path(path: &Path, input: &str) -> Result<Self> {
+        Self::try_parse(input).map_err(|message| BibsyncError::InvalidBibtex {
+            path: path.to_owned(),
+            message,
+        })
+    }
+
+    fn try_parse(input: &str) -> std::result::Result<Self, String> {
         let mut bibliography = Self::default();
         let mut first_entry_start = None;
-        for segment in split_bib_entries(input) {
+        for segment in split_bib_entries(input)? {
             if first_entry_start.is_none() {
                 first_entry_start = input.find(segment);
             }
-            if let Some(entry) = BibEntry::parse(segment) {
-                bibliography.entries.insert(entry.key.clone(), entry);
-            }
+            let entry = BibEntry::parse(segment).ok_or_else(|| {
+                format!(
+                    "could not parse entry starting near line {}",
+                    line_number(input, input.find(segment).unwrap_or(0))
+                )
+            })?;
+            bibliography.entries.insert(entry.key.clone(), entry);
         }
         if let Some(index) = first_entry_start {
             input[..index].trim().clone_into(&mut bibliography.preamble);
         } else {
             input.trim().clone_into(&mut bibliography.preamble);
         }
-        bibliography
+        Ok(bibliography)
     }
 
     fn contains(&self, key: &str) -> bool {
@@ -617,16 +714,16 @@ impl std::fmt::Display for Bibliography {
     }
 }
 
-fn split_bib_entries(input: &str) -> Vec<&str> {
+fn split_bib_entries(input: &str) -> std::result::Result<Vec<&str>, String> {
     let mut entries = Vec::new();
     let bytes = input.as_bytes();
     let mut index = 0;
     while let Some(relative_at) = input[index..].find('@') {
         let start = index + relative_at;
-        let Some(relative_open) = input[start..].find(['{', '(']) else {
-            break;
+        let Some(open) = bib_entry_open(input, start) else {
+            index = start + 1;
+            continue;
         };
-        let open = start + relative_open;
         let close = if bytes.get(open) == Some(&b'{') {
             b'}'
         } else {
@@ -650,10 +747,41 @@ fn split_bib_entries(input: &str) -> Vec<&str> {
             entries.push(&input[start..end]);
             index = end;
         } else {
+            return Err(format!(
+                "entry starting near line {} is missing a closing '{}'",
+                line_number(input, start),
+                close as char
+            ));
+        }
+    }
+    Ok(entries)
+}
+
+fn bib_entry_open(input: &str, at_index: usize) -> Option<usize> {
+    let rest = input.get(at_index + 1..)?;
+    let mut type_end = 0;
+    for (offset, ch) in rest.char_indices() {
+        if ch.is_ascii_alphabetic() {
+            type_end = offset + ch.len_utf8();
+        } else {
             break;
         }
     }
-    entries
+    if type_end == 0 {
+        return None;
+    }
+    let after_type = &rest[type_end..];
+    let whitespace = after_type.len() - after_type.trim_start().len();
+    let open = at_index + 1 + type_end + whitespace;
+    matches!(input.as_bytes().get(open), Some(b'{' | b'(')).then_some(open)
+}
+
+fn line_number(input: &str, byte_index: usize) -> usize {
+    input[..byte_index.min(input.len())]
+        .bytes()
+        .filter(|byte| *byte == b'\n')
+        .count()
+        + 1
 }
 
 fn indent_body(body: &str) -> String {
@@ -699,12 +827,28 @@ fn read_to_string_optional(path: &Path) -> Result<String> {
     }
 }
 
+fn read_to_string_existing(path: &Path, role: &'static str) -> Result<String> {
+    match fs::read_to_string(path) {
+        Ok(content) => Ok(content),
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {
+            Err(BibsyncError::MissingInput {
+                path: path.to_owned(),
+                role,
+            })
+        }
+        Err(source) => Err(BibsyncError::Io {
+            path: path.to_owned(),
+            source,
+        }),
+    }
+}
+
 fn is_supported_identifier(key: &str) -> bool {
     is_arxiv_id(key) || is_doi(key) || is_ads_bibcode(key)
 }
 
 fn load_ignore_set(path: &Path) -> Result<BTreeSet<String>> {
-    let content = read_to_string_optional(path)?;
+    let content = read_to_string_existing(path, "ignore file")?;
     Ok(content
         .lines()
         .map(str::trim)
@@ -962,7 +1106,14 @@ fn cache_store(root: &Path, key: &str, entry: &ResolvedEntry) -> Result<()> {
 
 fn read_json_optional<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<Option<T>> {
     match fs::read_to_string(path) {
-        Ok(content) => Ok(Some(serde_json::from_str(&content)?)),
+        Ok(content) => {
+            serde_json::from_str(&content)
+                .map(Some)
+                .map_err(|source| BibsyncError::Json {
+                    path: path.to_owned(),
+                    source,
+                })
+        }
         Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(BibsyncError::Io {
             path: path.to_owned(),
@@ -1036,6 +1187,18 @@ fn provider_name_from_slug(slug: &str) -> &'static str {
         "inspire" => "InspireHEP",
         _ => "provider",
     }
+}
+
+fn provider_request<T>(
+    provider: &'static str,
+    key: impl Into<String>,
+    result: std::result::Result<T, reqwest::Error>,
+) -> Result<T> {
+    result.map_err(|source| BibsyncError::ProviderRequest {
+        provider,
+        key: key.into(),
+        source,
+    })
 }
 
 fn unix_timestamp() -> u64 {
@@ -1117,14 +1280,15 @@ impl AdsProvider {
             return Ok(Some(key.to_owned()));
         }
         let query = format!("identifier:\"{key}\"");
-        let response: AdsSearchResponse = self
+        let response = self
             .client
             .get("https://api.adsabs.harvard.edu/v1/search/query")
             .headers(self.headers()?)
             .query(&[("q", query.as_str()), ("fl", "bibcode"), ("rows", "1")])
-            .send()?
-            .error_for_status()?
-            .json()?;
+            .send();
+        let response = provider_request(self.name(), key, response)?;
+        let response = provider_request(self.name(), key, response.error_for_status())?;
+        let response: AdsSearchResponse = provider_request(self.name(), key, response.json())?;
         Ok(response
             .response
             .docs
@@ -1133,18 +1297,25 @@ impl AdsProvider {
     }
 
     fn export_bibtex_many(&self, bibcodes: &[String]) -> Result<BTreeMap<String, String>> {
-        let response: AdsExportResponse = self
+        let key = if bibcodes.is_empty() {
+            "empty ADS export batch".to_owned()
+        } else {
+            bibcodes.join(", ")
+        };
+        let response = self
             .client
             .post("https://api.adsabs.harvard.edu/v1/export/bibtex")
             .headers(self.headers()?)
             .json(&json!({ "bibcode": bibcodes }))
-            .send()?
-            .error_for_status()?
-            .json()?;
+            .send();
+        let response = provider_request(self.name(), key.clone(), response)?;
+        let response = provider_request(self.name(), key.clone(), response.error_for_status())?;
+        let response: AdsExportResponse = provider_request(self.name(), key, response.json())?;
         let Some(export) = nonempty(&response.export) else {
             return Ok(BTreeMap::new());
         };
         Ok(split_bib_entries(&export)
+            .unwrap_or_default()
             .into_iter()
             .filter_map(|entry| {
                 let parsed = BibEntry::parse(entry)?;
@@ -1266,15 +1437,16 @@ impl BibliographyProvider for InspireProvider {
         } else {
             return Ok(None);
         };
-        let bibtex = self
+        let response = self
             .client
             .get("https://inspirehep.net/api/literature")
             .header(USER_AGENT, "bibsync/0.1")
             .header(ACCEPT, "application/x-bibtex")
             .query(&[("q", query.as_str()), ("format", "bibtex"), ("size", "1")])
-            .send()?
-            .error_for_status()?
-            .text()?;
+            .send();
+        let response = provider_request(self.name(), key, response)?;
+        let response = provider_request(self.name(), key, response.error_for_status())?;
+        let bibtex = provider_request(self.name(), key, response.text())?;
         let Some(bibtex) = nonempty(&bibtex) else {
             return Ok(None);
         };
@@ -1305,7 +1477,12 @@ impl BibliographyProvider for InspireProvider {
             return Ok(BTreeMap::new());
         }
 
-        let response: InspireSearchResponse = self
+        let batch_key = if keys.is_empty() {
+            "empty InspireHEP batch".to_owned()
+        } else {
+            keys.join(", ")
+        };
+        let response = self
             .client
             .get("https://inspirehep.net/api/literature")
             .header(USER_AGENT, "bibsync/0.1")
@@ -1313,9 +1490,12 @@ impl BibliographyProvider for InspireProvider {
                 ("q", query_parts.join(" OR ").as_str()),
                 ("size", keys.len().to_string().as_str()),
             ])
-            .send()?
-            .error_for_status()?
-            .json()?;
+            .send();
+        let response = provider_request(self.name(), batch_key.clone(), response)?;
+        let response =
+            provider_request(self.name(), batch_key.clone(), response.error_for_status())?;
+        let response: InspireSearchResponse =
+            provider_request(self.name(), batch_key, response.json())?;
 
         let mut record_by_key = BTreeMap::new();
         for hit in response.hits.hits {
@@ -1334,15 +1514,16 @@ impl BibliographyProvider for InspireProvider {
 
         let mut resolved = BTreeMap::new();
         for (key, record_id) in record_by_key {
-            let bibtex = self
+            let response = self
                 .client
                 .get(format!("https://inspirehep.net/api/literature/{record_id}"))
                 .header(USER_AGENT, "bibsync/0.1")
                 .header(ACCEPT, "application/x-bibtex")
                 .query(&[("format", "bibtex")])
-                .send()?
-                .error_for_status()?
-                .text()?;
+                .send();
+            let response = provider_request(self.name(), key.clone(), response)?;
+            let response = provider_request(self.name(), key.clone(), response.error_for_status())?;
+            let bibtex = provider_request(self.name(), key.clone(), response.text())?;
             let Some(bibtex) = nonempty(&bibtex) else {
                 continue;
             };
@@ -1437,8 +1618,8 @@ pub fn pre_commit_hook_manifest(ignore_file: Option<&Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        BibliographyProvider, ProviderChoice, ResolvedEntry, SyncOptions, citation_keys,
-        sync_files_with_provider,
+        BibliographyProvider, ProviderChoice, ResolvedEntry, SyncOptions, UnresolvedCitation,
+        citation_keys, sync_files_with_provider,
     };
     use std::cell::Cell;
     use std::collections::BTreeMap;
@@ -1622,5 +1803,193 @@ mod tests {
             .expect("second resolve");
         assert_eq!(second.len(), 1);
         assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn single_bib_update_requires_existing_input() {
+        let dir = tempdir().expect("tempdir");
+        let missing = dir.path().join("missing.bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let error = sync_files_with_provider(
+            std::slice::from_ref(&missing),
+            &SyncOptions::default(),
+            &provider,
+        )
+        .expect_err("missing single bibliography should fail");
+
+        assert!(error.to_string().contains("bibliography input not found"));
+        assert!(error.to_string().contains(&missing.display().to_string()));
+    }
+
+    #[test]
+    fn other_bibliography_requires_existing_input() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        let other = dir.path().join("shared.bib");
+        std::fs::write(&tex, "\\cite{2404.14498}").expect("write tex");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let error = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib),
+                other_bibliographies: vec![other.clone()],
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect_err("missing other bibliography should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("read-only bibliography not found")
+        );
+        assert!(error.to_string().contains(&other.display().to_string()));
+    }
+
+    #[test]
+    fn ignore_file_requires_existing_input() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        let ignore = dir.path().join(".bibsyncignore");
+        std::fs::write(&tex, "\\cite{NotAnIdentifier}").expect("write tex");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let error = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib),
+                ignore_file: Some(ignore.clone()),
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect_err("missing ignore file should fail");
+
+        assert!(error.to_string().contains("ignore file not found"));
+        assert!(error.to_string().contains(&ignore.display().to_string()));
+    }
+
+    #[test]
+    fn malformed_bibtex_reports_file_and_parse_error() {
+        let dir = tempdir().expect("tempdir");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&bib, "@article{broken,\n  title = {Missing close}\n")
+            .expect("write malformed bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let error = sync_files_with_provider(
+            std::slice::from_ref(&bib),
+            &SyncOptions::default(),
+            &provider,
+        )
+        .expect_err("malformed BibTeX should fail");
+
+        assert!(error.to_string().contains("invalid BibTeX"));
+        assert!(error.to_string().contains("missing a closing"));
+        assert!(error.to_string().contains(&bib.display().to_string()));
+    }
+
+    #[test]
+    fn malformed_output_bibtex_reports_file_and_parse_error() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&tex, "\\cite{NotAnIdentifier}").expect("write tex");
+        std::fs::write(&bib, "@article{broken,\n  title = {Missing close}\n")
+            .expect("write malformed bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let error = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib.clone()),
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect_err("malformed output BibTeX should fail");
+
+        assert!(error.to_string().contains("invalid BibTeX"));
+        assert!(error.to_string().contains("missing a closing"));
+        assert!(error.to_string().contains(&bib.display().to_string()));
+    }
+
+    #[test]
+    fn unresolved_details_distinguish_unsupported_and_provider_miss() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&tex, "\\cite{NotAnIdentifier,2404.14498}").expect("write tex");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+
+        let report = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib),
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync");
+
+        assert_eq!(report.unresolved, vec!["2404.14498", "NotAnIdentifier"]);
+        assert_eq!(
+            report.unresolved_details,
+            vec![
+                UnresolvedCitation {
+                    key: "2404.14498".to_owned(),
+                    reason: super::UnresolvedReason::ProviderNoMatch,
+                },
+                UnresolvedCitation {
+                    key: "NotAnIdentifier".to_owned(),
+                    reason: super::UnresolvedReason::UnsupportedIdentifier,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn corrupt_cache_json_reports_cache_path() {
+        let dir = tempdir().expect("tempdir");
+        let mapping = super::mapping_path(dir.path(), "inspire", "arxiv", "2404.14498");
+        std::fs::create_dir_all(mapping.parent().expect("mapping parent"))
+            .expect("create cache dir");
+        std::fs::write(&mapping, "{").expect("write corrupt cache");
+        let provider = CountingProvider {
+            calls: Rc::new(Cell::new(0)),
+            entries: BTreeMap::new(),
+        };
+        let cached = super::CachedProvider {
+            inner: Box::new(provider),
+            config: super::CacheConfig {
+                enabled: true,
+                refresh: false,
+                root: dir.path().to_owned(),
+            },
+        };
+
+        let error = cached
+            .resolve_many(&["2404.14498".to_owned()])
+            .expect_err("corrupt cache should fail");
+
+        assert!(error.to_string().contains("invalid JSON cache file"));
+        assert!(error.to_string().contains(&mapping.display().to_string()));
     }
 }

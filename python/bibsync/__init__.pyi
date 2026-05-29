@@ -8,6 +8,7 @@ class SyncReport(TypedDict):
     existing: list[str]
     found_in_other: list[str]
     unresolved: list[str]
+    unresolved_details: list[dict[str, str]]
     changed: bool
     check_mode: bool
 

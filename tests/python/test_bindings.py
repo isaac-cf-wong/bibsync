@@ -27,6 +27,7 @@ def test_sync_files_reports_existing_complete_bib_entry(tmp_path: Path) -> None:
         "existing": ["smith2024"],
         "found_in_other": [],
         "unresolved": [],
+        "unresolved_details": [],
         "changed": False,
         "check_mode": True,
     }
