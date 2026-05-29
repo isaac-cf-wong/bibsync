@@ -142,10 +142,18 @@ jobs:
                   cargo_toml.write_text("".join(lines), encoding="utf-8")
 
                   readme = Path("README.md")
-                  readme.write_text(
-                      re.sub(r"(?m)^(\s+rev:\s+)v[\d.]+", rf"\g<1>v{version}", readme.read_text(encoding="utf-8")),
-                      encoding="utf-8",
+                  readme_text = readme.read_text(encoding="utf-8")
+                  readme_text = re.sub(
+                      r"(?m)^(\s+rev:\s+)v[\d.]+",
+                      rf"\g<1>v{version}",
+                      readme_text,
                   )
+                  readme_text = re.sub(
+                      r"(?m)^(\s+version = \{)v[\d.]+(\},)",
+                      rf"\g<1>v{version}\2",
+                      readme_text,
+                  )
+                  readme.write_text(readme_text, encoding="utf-8")
                   PY
                     cargo generate-lockfile
 
