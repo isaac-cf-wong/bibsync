@@ -1,6 +1,6 @@
 # Contributing to bibsync
 
-Thank you for your interest in contributing to `bibsync`.
+🎉 Thank you for your interest in contributing to `bibsync`.
 
 ## Development
 
@@ -25,6 +25,7 @@ Thank you for your interest in contributing to `bibsync`.
     cargo fmt --all --check
     cargo clippy --all-targets --all-features -- -D warnings
     cargo test --all-features
+    pytest
     ```
 
 Use Conventional Commits for commit messages and pull request titles. The
