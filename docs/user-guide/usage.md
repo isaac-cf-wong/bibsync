@@ -21,6 +21,13 @@ reports whether `references.bib` is current. It does not write changes unless
 bibsync --fix main.tex -o references.bib
 ```
 
+When a required citekey cannot be resolved, `bibsync` prints a diagnostic for
+each key. Unsupported citekeys are reported as identifier-format problems, and
+identifier-like keys that the selected provider cannot find are reported as
+provider misses. Those messages are meant to be actionable in automation: fix the
+citekey, choose a provider that supports it, add the entry manually, or add the
+key to an ignore file.
+
 ## Citekey Style
 
 The most reliable workflow is to cite by identifier:
@@ -101,6 +108,10 @@ Additional read-only bibliographies can be passed with `--other`:
 bibsync main.tex -o references.bib --other shared.bib software.bib
 ```
 
+Every file passed with `--other` must already exist and contain valid BibTeX.
+If a path is wrong or a file is malformed, `bibsync` stops with an error naming
+that file instead of silently ignoring it.
+
 By default, entries found in those read-only files are not copied into the main
 output file. This is useful when a project deliberately keeps shared references
 or software citations in separate files.
@@ -132,6 +143,9 @@ bibsync --fix main.tex -o references.bib --ignore-file .bibsyncignore
 Ignored citekeys are never sent to any provider and their existing bib entries
 are never modified.
 
+The ignore file must exist when `--ignore-file` is passed. A misspelled ignore
+path is reported as a missing input file.
+
 ## Updating A BibTeX File
 
 Passing a single `.bib` file uses the existing keys in that bibliography as the
@@ -147,6 +161,10 @@ scanning TeX files. Add `--fix` to refresh the file:
 ```shell
 bibsync --fix references.bib
 ```
+
+The `.bib` file must exist in this mode. Existing output bibliographies are also
+parsed before resolution; malformed BibTeX reports the file and approximate
+entry location so the bibliography can be corrected before running again.
 
 Use `--force-regenerate` to rewrite all existing entries from provider output:
 
@@ -166,6 +184,14 @@ bibsync main.tex -o references.bib
 The command exits with a non-zero status when the bibliography would change or
 when a required citekey cannot be resolved. This is the mode used by the
 pre-commit hook.
+
+Unresolved citekeys are printed with reasons. For example:
+
+```text
+unresolved:
+  Smith2024: unsupported identifier format; use an arXiv ID, DOI, or ADS bibcode, or add the entry to the bibliography or ignore file
+  2404.14498: provider returned no matching BibTeX entry; check the citekey, choose a provider that supports it, or add the entry manually
+```
 
 Use `--fix` to write the calculated bibliography:
 
@@ -204,6 +230,11 @@ Override the cache location with `--cache-dir`:
 ```shell
 bibsync --cache --cache-dir .bibsync-cache main.tex -o references.bib
 ```
+
+If a cached JSON file is corrupt, `bibsync` reports the exact cache path. Remove
+that file or rerun with `--refresh-cache` to rebuild the provider response.
+Network and provider failures include the provider and citekey or batch being
+resolved.
 
 ## Backups
 
