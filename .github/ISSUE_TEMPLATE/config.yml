@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+    - name: GitHub Discussions
+      url: https://github.com/isaac-cf-wong/bibsync/discussions
+      about: Ask questions and share usage tips.
+    - name: Security advisories
+      url: https://github.com/isaac-cf-wong/bibsync/security/advisories/new
+      about: Report a vulnerability privately (do not open a public issue).
