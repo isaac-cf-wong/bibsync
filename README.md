@@ -38,6 +38,11 @@ NASA ADS and/or InspireHEP, rewrites provider BibTeX entries so the citekey stay
 the key used in TeX, and reports whether the output `.bib` file is current. With
 `--fix`, it writes the merged bibliography.
 
+When a citekey cannot be resolved, the command prints the key together with a
+reason and the likely fix. For example, an unsupported citekey is reported as an
+identifier-format problem, while an arXiv ID or DOI that the provider cannot find
+is reported as a provider miss.
+
 ## Installation
 
 Install the Rust CLI from crates.io:
@@ -166,6 +171,12 @@ To update a bibliography in place, pass a single `.bib` file:
 bibsync --fix references.bib --force-regenerate
 ```
 
+Existing input files are validated before resolution. A missing single `.bib`
+input, `--other` bibliography, or `--ignore-file` is reported as an error with
+the path that could not be read. Existing bibliography files are also parsed
+strictly, so malformed BibTeX reports the file and the approximate failing
+entry instead of being treated as an empty or partial bibliography.
+
 ### Update Behavior
 
 By default `bibsync` leaves published entries untouched. Only entries that look
@@ -216,6 +227,10 @@ bibsync --fix --refresh-cache main.tex -o references.bib
 ```
 
 Override the cache location with `--cache-dir DIR`.
+
+If a cache file is corrupt, `bibsync` reports the exact cache path and asks you
+to refresh or remove the bad cache entry. Provider request failures include the
+provider and citekey or batch being resolved.
 
 ## Pre-commit
 

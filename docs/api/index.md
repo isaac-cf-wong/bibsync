@@ -54,11 +54,15 @@ behavior.
 - `output`: explicit output bibliography file.
 - `other_bibliographies`: read-only bibliography sources.
 - `provider`: `auto`, NASA ADS, or InspireHEP.
-- `update_existing`: refresh existing entries when possible.
+- `update_mode`: controls whether existing entries are refreshed.
 - `force_regenerate`: rewrite existing entries from provider output.
 - `merge_other`: copy matching read-only entries into the output file.
 - `backup`: create a `.bak` file before overwriting.
 - `check`: compare only and do not write.
+- `cache`: read and write provider responses from the local cache.
+- `refresh_cache`: bypass cache reads and update cached provider responses.
+- `cache_dir`: override the cache location.
+- `ignore_file`: citekeys to skip during resolution.
 
 `SyncReport` describes the outcome:
 
@@ -67,8 +71,18 @@ behavior.
 - `existing`: citekeys already present.
 - `found_in_other`: citekeys found in read-only bibliographies.
 - `unresolved`: citekeys that could not be resolved.
+- `unresolved_details`: per-citekey diagnostics explaining whether resolution
+  failed because the key is not a supported identifier or because the provider
+  returned no match.
 - `changed`: whether the output would change.
 - `check_mode`: whether the run was check-only.
+
+`sync_files` validates existing input files before resolution. Missing TeX
+inputs, missing single-file `.bib` inputs, missing `other_bibliographies`,
+missing `ignore_file`, malformed existing BibTeX, corrupt cache JSON, and
+provider request failures are returned as `BibsyncError` values with file,
+provider, and key context where available. A missing output bibliography is
+allowed when `output` points to the file that should be created.
 
 ## Providers
 

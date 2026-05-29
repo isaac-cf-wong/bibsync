@@ -115,9 +115,14 @@ bibsync --fix --cache --provider inspire --output references.bib main.tex
 Then review and commit the changed bibliography.
 
 If the hook reports unresolved citekeys, either correct the citekey or choose a
-provider that supports that identifier type. For example, ADS bibcodes require
-NASA ADS:
+provider that supports that identifier type. The hook output includes a reason
+for each unresolved key, such as an unsupported identifier format or a provider
+miss. For example, ADS bibcodes require NASA ADS:
 
 ```shell
 bibsync --fix --cache --provider ads --output references.bib main.tex
 ```
+
+Missing `--ignore-file` or `--other` paths and malformed existing BibTeX are
+reported as input errors with the affected path. Fix those files or hook
+arguments before rerunning the hook.

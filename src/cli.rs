@@ -165,7 +165,10 @@ where
                 );
             }
             if !report.unresolved.is_empty() {
-                println!("unresolved: {}", report.unresolved.join(", "));
+                println!("unresolved:");
+                for detail in &report.unresolved_details {
+                    println!("  {}: {}", detail.key, detail.reason);
+                }
             }
             if report.changed {
                 if report.check_mode {

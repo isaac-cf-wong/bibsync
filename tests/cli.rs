@@ -43,7 +43,47 @@ fn cli_defaults_to_check_mode() {
         .arg(&tex)
         .assert()
         .failure()
-        .stdout(predicate::str::contains("unresolved: NotAnIdentifier"));
+        .stdout(predicate::str::contains("unresolved:"))
+        .stdout(predicate::str::contains(
+            "NotAnIdentifier: unsupported identifier format",
+        ));
+}
+
+#[test]
+fn cli_reports_missing_ignore_file() {
+    let dir = tempdir().expect("tempdir");
+    let tex = dir.path().join("main.tex");
+    let bib = dir.path().join("refs.bib");
+    let ignore = dir.path().join(".bibsyncignore");
+    std::fs::write(&tex, "\\cite{NotAnIdentifier}").expect("write tex");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--output")
+        .arg(&bib)
+        .arg("--ignore-file")
+        .arg(&ignore)
+        .arg(&tex)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("ignore file not found"))
+        .stderr(predicate::str::contains(ignore.display().to_string()));
+}
+
+#[test]
+fn cli_reports_malformed_bibtex() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(&bib, "@article{broken,\n  title = {Missing close}\n")
+        .expect("write malformed bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg(&bib)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid BibTeX"))
+        .stderr(predicate::str::contains("missing a closing"));
 }
 
 #[test]
