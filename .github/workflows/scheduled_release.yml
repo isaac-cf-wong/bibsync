@@ -153,12 +153,41 @@ jobs:
                       rf"\g<1>v{version}\2",
                       readme_text,
                   )
+                  import datetime
+                  today = datetime.date.today()
+                  readme_text = re.sub(
+                      r"(?m)^(\s+year\s+=\s+\{)\d{4}(\},)",
+                      rf"\g<1>{today.year}\2",
+                      readme_text,
+                  )
+                  month_abbr = today.strftime("%b").lower()
+                  readme_text = re.sub(
+                      r"(?m)^(\s+month\s+=\s+)[a-z]+",
+                      rf"\g<1>{month_abbr}",
+                      readme_text,
+                  )
                   readme.write_text(readme_text, encoding="utf-8")
+
+                  today_iso = today.isoformat()
+
+                  citation = Path("CITATION.cff")
+                  citation_text = citation.read_text(encoding="utf-8")
+                  citation_text = re.sub(
+                      r'(?m)^(version:\s+)"[\d.]+"',
+                      rf'\g<1>"{version}"',
+                      citation_text,
+                  )
+                  citation_text = re.sub(
+                      r'(?m)^(date-released:\s+)"\d{4}-\d{2}-\d{2}"',
+                      rf'\g<1>"{today_iso}"',
+                      citation_text,
+                  )
+                  citation.write_text(citation_text, encoding="utf-8")
                   PY
                     cargo generate-lockfile
 
-                    if ! git diff --quiet -- Cargo.toml Cargo.lock README.md; then
-                      git add Cargo.toml Cargo.lock README.md
+                    if ! git diff --quiet -- Cargo.toml Cargo.lock README.md CITATION.cff; then
+                      git add Cargo.toml Cargo.lock README.md CITATION.cff
                       git commit -m "chore(release): prepare for $NEW_TAG [skip ci]"
                       git push origin "HEAD:${GITHUB_REF_NAME}"
                     else
