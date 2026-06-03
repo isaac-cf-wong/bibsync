@@ -34,6 +34,7 @@ esac
 cache_root="${PRE_COMMIT_HOME:-${XDG_CACHE_HOME:-$HOME/.cache/pre-commit}}/bibsync"
 install_dir="$cache_root/$version-$os-$arch"
 binary="$install_dir/bibsync"
+install_marker="$install_dir/.installed"
 archive_ext="tar.gz"
 
 if [ "$os" = "windows" ]; then
@@ -41,28 +42,64 @@ if [ "$os" = "windows" ]; then
   archive_ext="zip"
 fi
 
-if [ ! -x "$binary" ]; then
-  mkdir -p "$install_dir"
-  archive="bibsync-$version-$os-$arch.$archive_ext"
-  url="https://github.com/isaac-cf-wong/bibsync/releases/download/$version/$archive"
-  tmp="$install_dir/$archive"
+if [ ! -x "$binary" ] || [ ! -f "$install_marker" ]; then
+  mkdir -p "$cache_root"
+  lock_dir="$cache_root/$version-$os-$arch.lock"
+  tmp_dir=""
+  cleanup_install() {
+    if [ -n "$tmp_dir" ]; then
+      rm -rf "$tmp_dir"
+    fi
+    rmdir "$lock_dir" 2>/dev/null || true
+  }
 
-  echo "Downloading $url" >&2
-  if command -v curl >/dev/null 2>&1; then
-    curl --fail --location --silent --show-error "$url" --output "$tmp"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -q "$url" -O "$tmp"
-  else
-    echo "curl or wget is required to download the bibsync binary" >&2
-    exit 2
-  fi
+  lock_waits=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    lock_waits=$((lock_waits + 1))
+    if [ "$lock_waits" -ge 300 ]; then
+      echo "Timed out waiting for bibsync install lock: $lock_dir" >&2
+      exit 2
+    fi
+    sleep 1
+  done
+  trap cleanup_install EXIT
 
-  if [ "$archive_ext" = "zip" ]; then
-    unzip -q -o "$tmp" -d "$install_dir"
+  if [ -x "$binary" ]; then
+    touch "$install_marker"
   else
-    tar -xzf "$tmp" -C "$install_dir"
+    tmp_dir="$(mktemp -d "$cache_root/.install.XXXXXX")"
+    staging_dir="$tmp_dir/extract"
+    mkdir -p "$staging_dir"
+
+    archive="bibsync-$version-$os-$arch.$archive_ext"
+    url="https://github.com/isaac-cf-wong/bibsync/releases/download/$version/$archive"
+    tmp="$tmp_dir/$archive"
+
+    echo "Downloading $url" >&2
+    if command -v curl >/dev/null 2>&1; then
+      curl --fail --location --silent --show-error "$url" --output "$tmp"
+    elif command -v wget >/dev/null 2>&1; then
+      wget -q "$url" -O "$tmp"
+    else
+      echo "curl or wget is required to download the bibsync binary" >&2
+      exit 2
+    fi
+
+    if [ "$archive_ext" = "zip" ]; then
+      unzip -q -o "$tmp" -d "$staging_dir"
+    else
+      tar -xzf "$tmp" -C "$staging_dir"
+    fi
+    staging_binary="$staging_dir/$(basename "$binary")"
+    chmod +x "$staging_binary"
+    mkdir -p "$install_dir"
+    mv "$staging_binary" "$binary"
+    touch "$install_marker"
+    rm -rf "$tmp_dir"
+    tmp_dir=""
   fi
-  chmod +x "$binary"
+  cleanup_install
+  trap - EXIT
 fi
 
 exec "$binary" "$@"
