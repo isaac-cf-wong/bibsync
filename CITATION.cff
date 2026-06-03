@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 title: "bibsync: A Rust package to automatically resolve, synchronize, and validate LaTeX citations across BibTeX databases"
-version: "0.3.3"
-date-released: "2026-06-02"
+version: "0.3.4"
+date-released: "2026-06-03"
 license: "BSD-3-Clause"
 type: software
 authors:
