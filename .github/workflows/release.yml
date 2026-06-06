@@ -56,7 +56,7 @@ jobs:
                       binary: bibsync.exe
                       archive: zip
         steps:
-            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
               with:
                   ref: ${{ inputs.tag_name || github.event.inputs.tag_name }}
 
@@ -124,7 +124,7 @@ jobs:
                       arch: x86_64
                       target: x64
         steps:
-            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
               with:
                   ref: ${{ inputs.tag_name || github.event.inputs.tag_name }}
 
@@ -150,7 +150,7 @@ jobs:
         name: Build Python source distribution
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
               with:
                   ref: ${{ inputs.tag_name || github.event.inputs.tag_name }}
 
@@ -199,7 +199,7 @@ jobs:
         needs: [build-binaries, build-python-wheels, build-python-sdist]
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
               with:
                   fetch-depth: 0
                   ref: ${{ inputs.tag_name || github.event.inputs.tag_name }}
