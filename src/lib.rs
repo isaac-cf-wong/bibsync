@@ -525,10 +525,18 @@ fn scan_tex_files(files: &[PathBuf]) -> Result<TexScan> {
     let bib_re =
         Regex::new(r"\\(?:no)?bibliography\*?\s*\{([^{}]+)\}").expect("valid bibliography regex");
     let comment_re = Regex::new(r"(?m)(?P<prefix>^|[^\\])%.*$").expect("valid comment regex");
+    // Pandoc citation key: `@` preceded by start-of-text or a non-word, non-`@`
+    // character (so email addresses like `name@host` are not treated as cites).
+    let markdown_cite_re =
+        Regex::new(r"(?:^|[^\w@])@([\w][\w:./#$%&+?<>~-]*)").expect("valid markdown cite regex");
     let mut scan = TexScan::default();
 
     for file in files {
         let raw = read_to_string(file)?;
+        if is_markdown(file) {
+            scan_markdown_text(&raw, file, &markdown_cite_re, &mut scan);
+            continue;
+        }
         let text = comment_re.replace_all(&raw, "$prefix");
         for captures in cite_re.captures_iter(&text) {
             for key in captures[1]
@@ -545,18 +553,161 @@ fn scan_tex_files(files: &[PathBuf]) -> Result<TexScan> {
                 .map(str::trim)
                 .filter(|bib| !bib.is_empty())
             {
-                let mut path = PathBuf::from(bib);
-                if path.extension().is_none() {
-                    path.set_extension("bib");
-                }
-                if path.is_relative() {
-                    path = file.parent().unwrap_or_else(|| Path::new(".")).join(path);
-                }
-                scan.bibliographies.push(path);
+                scan.bibliographies
+                    .push(resolve_bibliography_path(bib, file));
             }
         }
     }
     Ok(scan)
+}
+
+/// Scan a Markdown source (such as a JOSS `paper.md`) for pandoc citations and
+/// the bibliography declared in the YAML frontmatter.
+fn scan_markdown_text(raw: &str, file: &Path, cite_re: &Regex, scan: &mut TexScan) {
+    let (frontmatter, body) = split_markdown_frontmatter(raw);
+    if let Some(frontmatter) = frontmatter {
+        for spec in frontmatter_bibliographies(frontmatter) {
+            scan.bibliographies
+                .push(resolve_bibliography_path(&spec, file));
+        }
+    }
+    let body = strip_markdown_code(body);
+    for captures in cite_re.captures_iter(&body) {
+        let key = captures[1].trim_end_matches(['.', ',', ';', ':', '!', '?']);
+        if !key.is_empty() {
+            scan.citekeys.insert(key.to_owned());
+        }
+    }
+}
+
+fn is_markdown(path: &Path) -> bool {
+    has_extension(path, "md") || has_extension(path, "markdown")
+}
+
+/// Resolve a bibliography reference to a path, defaulting the extension to `.bib`
+/// and resolving relative paths against the source file's directory.
+fn resolve_bibliography_path(spec: &str, source: &Path) -> PathBuf {
+    let mut path = PathBuf::from(spec);
+    if path.extension().is_none() {
+        path.set_extension("bib");
+    }
+    if path.is_relative() {
+        path = source.parent().unwrap_or_else(|| Path::new(".")).join(path);
+    }
+    path
+}
+
+/// Split a Markdown document into its YAML frontmatter and body.
+///
+/// Frontmatter is recognized only when the document opens with a `---` fence on
+/// its first line, closed by a line containing exactly `---` or `...`.
+fn split_markdown_frontmatter(text: &str) -> (Option<&str>, &str) {
+    let after_open = text
+        .strip_prefix("---\n")
+        .or_else(|| text.strip_prefix("---\r\n"));
+    let Some(after_open) = after_open else {
+        return (None, text);
+    };
+    let open_len = text.len() - after_open.len();
+    let mut offset = 0;
+    for line in after_open.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches(['\n', '\r']);
+        if trimmed == "---" || trimmed == "..." {
+            let frontmatter = &after_open[..offset];
+            let body = &text[open_len + offset + line.len()..];
+            return (Some(frontmatter), body);
+        }
+        offset += line.len();
+    }
+    (None, text)
+}
+
+/// Extract `bibliography` entries from YAML frontmatter.
+///
+/// Supports a single scalar (`bibliography: paper.bib`), an inline list
+/// (`bibliography: [a.bib, b.bib]`), and a block list of `-` items.
+fn frontmatter_bibliographies(frontmatter: &str) -> Vec<String> {
+    let mut bibliographies = Vec::new();
+    let mut lines = frontmatter.lines().peekable();
+    while let Some(line) = lines.next() {
+        // Only consider top-level keys so nested `bibliography` fields under
+        // other mappings are ignored.
+        if line.starts_with([' ', '\t']) {
+            continue;
+        }
+        let Some(value) = line.trim().strip_prefix("bibliography:") else {
+            continue;
+        };
+        let value = value.trim();
+        if value.is_empty() {
+            while let Some(next) = lines.peek() {
+                let trimmed = next.trim_start();
+                if let Some(item) = trimmed.strip_prefix('-') {
+                    let item = clean_yaml_scalar(item);
+                    if !item.is_empty() {
+                        bibliographies.push(item);
+                    }
+                    lines.next();
+                } else if trimmed.is_empty() || trimmed.starts_with('#') {
+                    // Skip blank lines and YAML comments so they do not
+                    // truncate the bibliography list.
+                    lines.next();
+                } else {
+                    break;
+                }
+            }
+        } else if let Some(inner) = value.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+            for item in inner.split(',') {
+                let item = clean_yaml_scalar(item);
+                if !item.is_empty() {
+                    bibliographies.push(item);
+                }
+            }
+        } else {
+            let value = clean_yaml_scalar(value);
+            if !value.is_empty() {
+                bibliographies.push(value);
+            }
+        }
+    }
+    bibliographies
+}
+
+fn clean_yaml_scalar(value: &str) -> String {
+    let value = value.trim();
+    // Quoted scalars are taken verbatim; a `#` inside quotes is not a comment.
+    if let Some(rest) = value.strip_prefix('\'') {
+        if let Some(end) = rest.find('\'') {
+            return rest[..end].trim().to_owned();
+        }
+    }
+    if let Some(rest) = value.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            return rest[..end].trim().to_owned();
+        }
+    }
+    // Unquoted: strip a trailing YAML comment (a `#` preceded by whitespace or
+    // at the start of the value), leaving `#` that is part of the value alone.
+    strip_yaml_comment(value).trim().to_owned()
+}
+
+fn strip_yaml_comment(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    for (index, &byte) in bytes.iter().enumerate() {
+        if byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace()) {
+            return &value[..index];
+        }
+    }
+    value
+}
+
+/// Replace fenced and inline code spans with blanks so `@`-prefixed tokens in
+/// code (for example Python decorators) are not mistaken for citations.
+fn strip_markdown_code(text: &str) -> String {
+    let fenced = Regex::new(r"(?s)```.*?```|~~~.*?~~~").expect("valid fenced code regex");
+    let inline = Regex::new(r"`[^`\n]*`").expect("valid inline code regex");
+    let stripped = fenced.replace_all(text, " ");
+    inline.replace_all(&stripped, " ").into_owned()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1611,7 +1762,7 @@ pub fn pre_commit_hook_manifest(ignore_file: Option<&Path>) -> String {
         "bibsync".to_owned()
     };
     format!(
-        "- id: bibsync\n  name: bibsync\n  description: Synchronize BibTeX entries from TeX citation keys\n  entry: {entry}\n  language: rust\n  types_or: [tex, bib]\n"
+        "- id: bibsync\n  name: bibsync\n  description: Synchronize BibTeX entries from TeX citation keys\n  entry: {entry}\n  language: rust\n  types_or: [tex, markdown, bib]\n"
     )
 }
 
@@ -1679,6 +1830,68 @@ mod tests {
         assert!(keys.contains("2404.14498"));
         assert!(keys.contains("10.1234/example"));
         assert!(!keys.contains("ignored"));
+    }
+
+    #[test]
+    fn scans_joss_markdown_citations_and_bibliography() {
+        let dir = tempdir().expect("tempdir");
+        let paper = dir.path().join("paper.md");
+        std::fs::write(
+            &paper,
+            "---\n\
+             title: 'Example'\n\
+             authors:\n\
+             \x20\x20- name: A. Researcher\n\
+             \x20\x20\x20\x20email: a@example.com\n\
+             bibliography: paper.bib\n\
+             ---\n\
+             \n\
+             Some prose citing [@2404.14498] and @arXiv:2312.00752.\n\
+             A grouped cite [see @10.1234/example; @2404.14498].\n\
+             \n\
+             ```python\n\
+             @decorator\n\
+             def f():\n\
+             \x20\x20\x20\x20pass\n\
+             ```\n\
+             Inline `@inline.code` is ignored too.\n",
+        )
+        .expect("write paper.md");
+
+        let scan = super::scan_tex_files(std::slice::from_ref(&paper)).expect("scan markdown");
+        assert!(scan.citekeys.contains("2404.14498"));
+        assert!(scan.citekeys.contains("arXiv:2312.00752"));
+        assert!(scan.citekeys.contains("10.1234/example"));
+        assert!(!scan.citekeys.contains("decorator"));
+        assert!(!scan.citekeys.contains("inline.code"));
+        assert!(!scan.citekeys.iter().any(|key| key.contains("example.com")));
+        assert_eq!(scan.bibliographies, vec![dir.path().join("paper.bib")]);
+    }
+
+    #[test]
+    fn frontmatter_bibliography_supports_lists() {
+        let inline = super::frontmatter_bibliographies("bibliography: [a.bib, 'b.bib']");
+        assert_eq!(inline, vec!["a.bib".to_owned(), "b.bib".to_owned()]);
+
+        let block = super::frontmatter_bibliographies(
+            "title: x\nbibliography:\n  - a.bib\n  - b.bib\nother: y",
+        );
+        assert_eq!(block, vec!["a.bib".to_owned(), "b.bib".to_owned()]);
+    }
+
+    #[test]
+    fn frontmatter_bibliography_strips_yaml_comments() {
+        let scalar = super::frontmatter_bibliographies("bibliography: paper.bib # the refs");
+        assert_eq!(scalar, vec!["paper.bib".to_owned()]);
+
+        let block = super::frontmatter_bibliographies(
+            "bibliography:\n  # primary\n  - a.bib  # main\n  - b.bib\n",
+        );
+        assert_eq!(block, vec!["a.bib".to_owned(), "b.bib".to_owned()]);
+
+        // A `#` without preceding whitespace, or inside quotes, is part of the value.
+        let hash = super::frontmatter_bibliographies("bibliography: 'paper #1.bib'");
+        assert_eq!(hash, vec!["paper #1.bib".to_owned()]);
     }
 
     #[test]

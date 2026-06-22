@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[command(version, about)]
 #[allow(clippy::struct_excessive_bools)]
 struct Cli {
-    /// TeX files to scan, or a single BibTeX file to check or update.
+    /// TeX or Markdown files to scan, or a single BibTeX file to check or update.
     #[arg(value_name = "FILE")]
     files: Vec<PathBuf>,
 
@@ -122,7 +122,7 @@ where
         return 0;
     }
     if cli.files.is_empty() {
-        eprintln!("error: at least one TeX file or one BibTeX file is required");
+        eprintln!("error: at least one TeX file, Markdown file, or BibTeX file is required");
         return 2;
     }
 
