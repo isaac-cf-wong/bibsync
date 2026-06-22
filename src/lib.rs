@@ -648,7 +648,9 @@ fn frontmatter_bibliographies(frontmatter: &str) -> Vec<String> {
                         bibliographies.push(item);
                     }
                     lines.next();
-                } else if trimmed.is_empty() {
+                } else if trimmed.is_empty() || trimmed.starts_with('#') {
+                    // Skip blank lines and YAML comments so they do not
+                    // truncate the bibliography list.
                     lines.next();
                 } else {
                     break;
@@ -673,12 +675,30 @@ fn frontmatter_bibliographies(frontmatter: &str) -> Vec<String> {
 
 fn clean_yaml_scalar(value: &str) -> String {
     let value = value.trim();
-    let unquoted = value
-        .strip_prefix('\'')
-        .and_then(|v| v.strip_suffix('\''))
-        .or_else(|| value.strip_prefix('"').and_then(|v| v.strip_suffix('"')))
-        .unwrap_or(value);
-    unquoted.trim().to_owned()
+    // Quoted scalars are taken verbatim; a `#` inside quotes is not a comment.
+    if let Some(rest) = value.strip_prefix('\'') {
+        if let Some(end) = rest.find('\'') {
+            return rest[..end].trim().to_owned();
+        }
+    }
+    if let Some(rest) = value.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            return rest[..end].trim().to_owned();
+        }
+    }
+    // Unquoted: strip a trailing YAML comment (a `#` preceded by whitespace or
+    // at the start of the value), leaving `#` that is part of the value alone.
+    strip_yaml_comment(value).trim().to_owned()
+}
+
+fn strip_yaml_comment(value: &str) -> &str {
+    let bytes = value.as_bytes();
+    for (index, &byte) in bytes.iter().enumerate() {
+        if byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace()) {
+            return &value[..index];
+        }
+    }
+    value
 }
 
 /// Replace fenced and inline code spans with blanks so `@`-prefixed tokens in
@@ -1857,6 +1877,21 @@ mod tests {
             "title: x\nbibliography:\n  - a.bib\n  - b.bib\nother: y",
         );
         assert_eq!(block, vec!["a.bib".to_owned(), "b.bib".to_owned()]);
+    }
+
+    #[test]
+    fn frontmatter_bibliography_strips_yaml_comments() {
+        let scalar = super::frontmatter_bibliographies("bibliography: paper.bib # the refs");
+        assert_eq!(scalar, vec!["paper.bib".to_owned()]);
+
+        let block = super::frontmatter_bibliographies(
+            "bibliography:\n  # primary\n  - a.bib  # main\n  - b.bib\n",
+        );
+        assert_eq!(block, vec!["a.bib".to_owned(), "b.bib".to_owned()]);
+
+        // A `#` without preceding whitespace, or inside quotes, is part of the value.
+        let hash = super::frontmatter_bibliographies("bibliography: 'paper #1.bib'");
+        assert_eq!(hash, vec!["paper #1.bib".to_owned()]);
     }
 
     #[test]
