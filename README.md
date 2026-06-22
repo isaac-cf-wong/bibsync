@@ -38,6 +38,23 @@ NASA ADS and/or InspireHEP, rewrites provider BibTeX entries so the citekey stay
 the key used in TeX, and reports whether the output `.bib` file is current. With
 `--fix`, it writes the merged bibliography.
 
+Markdown sources are supported too, including
+[Journal of Open Source Software](https://joss.theoj.org/) `paper.md` files.
+`bibsync` reads pandoc citations and the `bibliography` field from the YAML
+frontmatter:
+
+```markdown
+---
+bibliography: paper.bib
+---
+
+Prior work [@1602.03837; @10.1103/PhysRevLett.116.061102].
+```
+
+```shell
+bibsync --fix paper.md
+```
+
 When a citekey cannot be resolved, the command prints the key together with a
 reason and the likely fix. For example, an unsupported citekey is reported as an
 identifier-format problem, while an arXiv ID or DOI that the provider cannot find

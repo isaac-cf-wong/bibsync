@@ -50,6 +50,33 @@ fn cli_defaults_to_check_mode() {
 }
 
 #[test]
+fn cli_scans_joss_markdown_paper() {
+    let dir = tempdir().expect("tempdir");
+    let paper = dir.path().join("paper.md");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(
+        &paper,
+        "---\ntitle: Example\nbibliography: refs.bib\n---\n\nText citing [@NotAnIdentifier].\n",
+    )
+    .expect("write paper.md");
+    std::fs::write(&bib, "").expect("write bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--output")
+        .arg(&bib)
+        .arg(&paper)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("unresolved:"))
+        .stdout(predicate::str::contains(
+            "NotAnIdentifier: unsupported identifier format",
+        ));
+}
+
+#[test]
 fn cli_reports_missing_ignore_file() {
     let dir = tempdir().expect("tempdir");
     let tex = dir.path().join("main.tex");

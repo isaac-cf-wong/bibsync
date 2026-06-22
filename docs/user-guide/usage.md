@@ -1,7 +1,7 @@
 # Usage
 
-The main command accepts one or more TeX files, or a single BibTeX file in
-bibliography-refresh mode:
+The main command accepts one or more TeX or Markdown files, or a single BibTeX
+file in bibliography-refresh mode:
 
 ```shell
 bibsync [OPTIONS] [FILE]...
@@ -71,6 +71,36 @@ Use `--output` when you want explicit control:
 
 ```shell
 bibsync main.tex chapter.tex --output references.bib
+```
+
+## Markdown And JOSS Papers
+
+`bibsync` also scans Markdown sources, including
+[Journal of Open Source Software](https://joss.theoj.org/) `paper.md` files. Files
+ending in `.md` or `.markdown` are parsed for pandoc-style citations and for the
+bibliography declared in the YAML frontmatter:
+
+```markdown
+---
+title: "My Software"
+bibliography: paper.bib
+---
+
+Background and prior work [@1602.03837; @10.1103/PhysRevLett.116.061102].
+```
+
+The `bibliography` frontmatter field is used as the output file when `--output`
+is not given, matching the way `\bibliography{...}` is discovered in TeX. A single
+value, an inline list (`[a.bib, b.bib]`), and a block list of `-` items are all
+supported.
+
+Pandoc citation keys (`@key`, `[@key]`, `[-@key]`, and grouped `[@a; @b]` forms)
+are extracted from the body. Citations inside fenced or inline code spans are
+ignored, and email addresses such as `name@example.com` are not mistaken for
+citations. As with TeX, the most reliable workflow is to cite by identifier:
+
+```shell
+bibsync --fix paper.md
 ```
 
 ## Existing Bibliographies
