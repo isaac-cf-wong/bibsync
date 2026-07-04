@@ -24,7 +24,7 @@ jobs:
 
             - name: Check for new commits
               id: check_commits
-              uses: isaac-cf-wong/detect-git-changes-action@484da6639676d11009fc70cf1a09b73d31737fe9 # v0.0.13
+              uses: isaac-cf-wong/detect-git-changes-action@ecc6bf915a7987eb27f70d560c8067a69b943cb5 # v0.0.14
               with:
                   use-latest-tag: true
 
@@ -70,7 +70,7 @@ jobs:
                   GH_TOKEN: ${{ steps.release_app_token.outputs.token }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+              uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
               with:
                   toolchain: stable
 
@@ -251,7 +251,7 @@ jobs:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+              uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
               with:
                   toolchain: stable
                   targets: ${{ matrix.target }}
