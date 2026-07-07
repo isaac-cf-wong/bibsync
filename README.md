@@ -254,6 +254,13 @@ provider and citekey or batch being resolved.
 The repository includes `.pre-commit-hooks.yaml`, so other projects can use
 `bibsync` as a pre-commit hook.
 
+Both hooks run on TeX (`.tex`), BibTeX (`.bib`), and Markdown (`.md`) files, so
+JOSS-style `paper.md` bibliographies are kept in sync automatically. Because
+every `@key` in a scanned file is treated as a citation, if your repository has
+other Markdown that uses `@` for something else (for example a `README.md` with
+GitHub `@mentions`), scope the hook to your citation sources with `files:`, for
+example `files: (?:paper\.md|.*\.bib)$`.
+
 Use the pre-built binary hook for faster installs:
 
 ```yaml
