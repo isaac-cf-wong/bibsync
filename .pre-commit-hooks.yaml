@@ -1,12 +1,12 @@
 - id: bibsync
   name: bibsync
-  description: Synchronize BibTeX entries from TeX citation keys
+  description: Synchronize BibTeX entries from TeX and Markdown citation keys
   entry: bibsync
   language: rust
-  types_or: [tex, bib]
+  types_or: [tex, bib, markdown]
 - id: bibsync-bin
   name: bibsync
-  description: Synchronize BibTeX entries using a pre-built release binary
+  description: Synchronize BibTeX entries from TeX and Markdown citation keys using a pre-built release binary
   entry: scripts/pre-commit-bibsync
   language: script
-  types_or: [tex, bib]
+  types_or: [tex, bib, markdown]
