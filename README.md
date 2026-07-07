@@ -254,12 +254,29 @@ provider and citekey or batch being resolved.
 The repository includes `.pre-commit-hooks.yaml`, so other projects can use
 `bibsync` as a pre-commit hook.
 
-Both hooks run on TeX (`.tex`), BibTeX (`.bib`), and Markdown (`.md`) files, so
-JOSS-style `paper.md` bibliographies are kept in sync automatically. Because
-every `@key` in a scanned file is treated as a citation, if your repository has
-other Markdown that uses `@` for something else (for example a `README.md` with
-GitHub `@mentions`), scope the hook to your citation sources with `files:`, for
-example `files: (?:paper\.md|.*\.bib)$`.
+Both hooks run on TeX (`.tex`), BibTeX (`.bib`), and Markdown (`.md`) files.
+Every `@key` in a scanned file is treated as a citation, so scanning unrelated
+Markdown can raise false positives — for example a `README.md` that uses GitHub
+`@mentions`. **The recommended setup is to scope the hook to your citation
+sources with `files:`** rather than relying on the default file matching.
+
+For a JOSS paper (`paper.md` + `paper.bib`):
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v0.4.2
+      hooks:
+          - id: bibsync-bin
+            files: ^paper\.md$
+            args: [--fix, --cache, --provider, inspire, --output, paper.bib]
+```
+
+The `--output` bibliography is read and written even when it is not itself
+matched by `files:`, so scoping to `paper.md` still keeps `paper.bib` in sync.
+
+The remaining examples below omit `files:` for brevity; add it to match your
+project layout.
 
 Use the pre-built binary hook for faster installs:
 
