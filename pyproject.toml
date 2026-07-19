@@ -26,7 +26,7 @@ classifiers = [
 dynamic = ["version"]
 
 [dependency-groups]
-dev = ["pytest>=9.1.1", "ruff>=0.15.21", "prek>=0.4.10"]
+dev = ["pytest>=9.1.1", "ruff>=0.15.22", "prek>=0.4.10"]
 build = ["maturin>=1.14.1,<2"]
 
 [project.urls]
