@@ -24,9 +24,9 @@ reqwest = { version = "0.13.4", default-features = false, features = [
   "query",
   "rustls",
 ] }
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.150"
-thiserror = "2.0.18"
+thiserror = "2.0.19"
 
 [features]
 python = ["dep:pyo3"]
