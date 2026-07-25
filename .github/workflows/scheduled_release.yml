@@ -18,13 +18,13 @@ jobs:
         outputs:
             has-changes: ${{ steps.check_commits.outputs.has-changes }}
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   fetch-depth: 0
 
             - name: Check for new commits
               id: check_commits
-              uses: isaac-cf-wong/detect-git-changes-action@cd2bc7a539b89312d0d7bca70991988083157e21 # v0.0.16
+              uses: isaac-cf-wong/detect-git-changes-action@50cc47e09e21348f8e5a3231544c7ec317121df6 # v0.0.17
               with:
                   use-latest-tag: true
 
@@ -58,7 +58,7 @@ jobs:
                   private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
                   permission-contents: write
 
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   fetch-depth: 0
                   token: ${{ steps.release_app_token.outputs.token }}
@@ -246,7 +246,7 @@ jobs:
                       binary: bibsync.exe
                       archive: zip
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
@@ -315,7 +315,7 @@ jobs:
                       arch: x86_64
                       target: x64
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
@@ -342,7 +342,7 @@ jobs:
         needs: create_tag
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
@@ -395,7 +395,7 @@ jobs:
         needs: [create_tag, build-binaries, build-python-wheels, build-python-sdist]
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
                   fetch-depth: 0
                   ref: ${{ needs.create_tag.outputs.new_tag }}
