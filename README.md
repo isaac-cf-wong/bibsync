@@ -107,7 +107,7 @@ For convenience, you can also use:
 @software{wong2026bibsync,
   author  = {Wong, Isaac C. F.},
   title   = {bibsync: A Rust package to automatically resolve, synchronize, and validate LaTeX citations across BibTeX databases},
-  version = {v0.4.7},
+  version = {v0.4.8},
   year    = {2026},
   month   = aug,
   doi     = {10.5281/zenodo.20422622},
@@ -265,7 +265,7 @@ For a JOSS paper (`paper.md` + `paper.bib`):
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.4.7
+      rev: v0.4.8
       hooks:
           - id: bibsync-bin
             files: ^paper\.md$
@@ -283,7 +283,7 @@ Use the pre-built binary hook for faster installs:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.4.7
+      rev: v0.4.8
       hooks:
           - id: bibsync-bin
             args: [--cache, --provider, inspire, --output, references.bib]
@@ -298,7 +298,7 @@ installation:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.4.7
+      rev: v0.4.8
       hooks:
           - id: bibsync
             args: [--provider, inspire, --output, references.bib]
@@ -310,7 +310,7 @@ writing changes. To let the hook update files, add `--fix` to the hook args:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.4.7
+      rev: v0.4.8
       hooks:
           - id: bibsync-bin
             args: [--fix, --cache, --provider, inspire, --output, references.bib]
@@ -321,7 +321,7 @@ To skip manually curated entries, add `--ignore-file`:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.4.7
+      rev: v0.4.8
       hooks:
           - id: bibsync-bin
             args:
