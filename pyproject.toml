@@ -27,7 +27,7 @@ dynamic = ["version"]
 
 [dependency-groups]
 dev = ["pytest>=9.1.1", "ruff>=0.16.4", "prek>=0.4.14"]
-build = ["maturin>=1.14.1,<2"]
+build = ["maturin>=1.15.0,<2"]
 
 [project.urls]
 Homepage = "https://github.com/isaac-cf-wong/bibsync"
