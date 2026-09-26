@@ -24,7 +24,7 @@ jobs:
 
             - name: Check for new commits
               id: check_commits
-              uses: isaac-cf-wong/detect-git-changes-action@10d1e3ac7c5ee0997d7b370e9929cacac9c87013 # v0.0.19
+              uses: isaac-cf-wong/detect-git-changes-action@a8b0d224a4fdff017607079f83f01f013b9d66a6 # v0.0.20
               with:
                   use-latest-tag: true
 
@@ -88,7 +88,7 @@ jobs:
             - name: Determine release version
               if: ${{ steps.previous_tag.outputs.has_previous_tag == 'true' }}
               id: release_version
-              uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4.9.0
+              uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
               with:
                   config: cliff.toml
                   args: --bumped-version
@@ -402,7 +402,7 @@ jobs:
 
             - name: Generate changelog
               id: changelog
-              uses: orhun/git-cliff-action@3d96a18cc4ec17e9dc69ddcc424ccafaf1f78ce2 # v4.9.0
+              uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
               with:
                   config: cliff.toml
                   args: --current --verbose
