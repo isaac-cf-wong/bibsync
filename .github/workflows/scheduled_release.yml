@@ -24,7 +24,7 @@ jobs:
 
             - name: Check for new commits
               id: check_commits
-              uses: isaac-cf-wong/detect-git-changes-action@9863c3c0ba155ed10b54072f711ae8807aedbc87 # v0.0.22
+              uses: isaac-cf-wong/detect-git-changes-action@7a2a8da1d825e42f95f1f088760332b18604e781 # v0.0.23
               with:
                   use-latest-tag: true
 
@@ -52,7 +52,7 @@ jobs:
         steps:
             - name: Create release GitHub App token
               id: release_app_token
-              uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+              uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
               with:
                   app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
                   private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -70,7 +70,7 @@ jobs:
                   GH_TOKEN: ${{ steps.release_app_token.outputs.token }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+              uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
               with:
                   toolchain: stable
 
@@ -251,7 +251,7 @@ jobs:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+              uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
               with:
                   toolchain: stable
                   targets: ${{ matrix.target }}
