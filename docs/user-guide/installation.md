@@ -21,7 +21,9 @@ Use pip when you want Python bindings or prefer Python packaging:
 pip install bibsync
 ```
 
-The PyPI package requires Python 3.12 or newer. It provides:
+The PyPI package requires Python 3.13 or newer. Supported Python versions follow
+[SPEC 0](https://scientific-python.org/specs/spec-0000/): each version is
+supported for three years after its release. It provides:
 
 - `import bibsync` for Python workflows.
 - The `bibsync` console command, backed by the same Rust implementation used by

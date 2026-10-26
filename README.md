@@ -75,7 +75,7 @@ pip install bibsync
 ```
 
 The PyPI package includes Python bindings and installs the `bibsync` command.
-Python 3.12 or newer is required.
+Python 3.13 or newer is required.
 
 You can also download a pre-built binary from the
 [GitHub releases page](https://github.com/isaac-cf-wong/bibsync/releases). Pick
