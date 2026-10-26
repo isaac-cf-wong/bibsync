@@ -436,9 +436,13 @@ jobs:
     publish:
         needs: [create_tag, release]
         uses: ./.github/workflows/publish.yml
-        secrets: inherit
+        # Grant the OIDC token permission the called workflow needs for crates.io
+        # trusted publishing; a called workflow cannot exceed its caller's grant.
+        permissions:
+            contents: read
+            id-token: write
         with:
             tag_name: ${{ needs.create_tag.outputs.new_tag }}
             # Template safety switch. Change to `true` in a real package after
-            # configuring the `crates-io` environment and `CARGO_REGISTRY_TOKEN`.
+            # configuring the `crates-io` environment and a crates.io trusted publisher.
             publish: true
