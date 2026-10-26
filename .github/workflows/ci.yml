@@ -54,6 +54,20 @@ jobs:
                   toolchain: stable
                   components: clippy,rustfmt
 
+            # The python feature links libpython into the test binaries, so pin the
+            # interpreter instead of relying on whatever the runner image ships.
+            # Exporting PYO3_PYTHON also makes pyo3 re-run its build script rather
+            # than reuse a cached config from a different runner image.
+            - name: Install Python
+              id: python
+              uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+              with:
+                  python-version: "3.12"
+
+            - name: Point pyo3 at the installed Python
+              shell: bash
+              run: echo "PYO3_PYTHON=${{ steps.python.outputs.python-path }}" >> "$GITHUB_ENV"
+
             - name: Cache Cargo
               uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
