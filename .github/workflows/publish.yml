@@ -26,7 +26,7 @@ on:
 
 env:
     # Template safety switch. Change this to `true` in a real package after
-    # configuring the `crates-io` environment and `CARGO_REGISTRY_TOKEN` secret.
+    # configuring the `crates-io` environment and a crates.io trusted publisher.
     PUBLISH_TO_CRATES_IO: "true"
 
 jobs:
@@ -83,6 +83,13 @@ jobs:
         if: ${{ needs.verify.outputs.publish_enabled == 'true' }}
         runs-on: ubuntu-latest
         environment: crates-io
+        # crates.io trusted publishing exchanges the job's OIDC token for a
+        # short-lived publish token. crates.io matches the token against the
+        # top-level workflow, so register both publish.yml (manual dispatch) and
+        # scheduled_release.yml (which calls this workflow) as trusted publishers.
+        permissions:
+            contents: read
+            id-token: write
         steps:
             - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
               with:
@@ -109,5 +116,11 @@ jobs:
                     exit 1
                   fi
 
+            - name: Authenticate with crates.io
+              id: crates_io_auth
+              uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+
             - name: Publish crate
-              run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+              run: cargo publish
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ steps.crates_io_auth.outputs.token }}
