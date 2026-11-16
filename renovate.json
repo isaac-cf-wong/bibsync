@@ -1,10 +1,6 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-        "config:recommended",
-        "config:best-practices",
-        ":semanticCommitTypeAll(chore)"
-    ],
+    "extends": ["config:recommended", "config:best-practices", ":semanticCommitTypeAll(chore)"],
     "labels": ["dependencies"],
     "dependencyDashboard": {
         "enabled": true,
@@ -20,10 +16,7 @@
     "packageRules": [
         {
             "matchManagers": ["pep621"],
-            "matchDepTypes": [
-                "project.dependencies",
-                "project.optional-dependencies"
-            ],
+            "matchDepTypes": ["project.dependencies", "project.optional-dependencies"],
             "matchUpdateTypes": ["patch", "minor"],
             "groupName": "runtime minor & patch",
             "minimumReleaseAge": "3 days",
