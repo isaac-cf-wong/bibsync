@@ -220,6 +220,45 @@ hand:
 bibsync: journal "Phys. Rev. Z" in 2001.00001 is not in bibsync's journal table; left unchanged, check that it is the full name
 ```
 
+To catch abbreviations that `--full-journal-names` cannot fix (journals missing
+from the table, and hand-written or ignored entries), add `--check-venue-names`.
+It checks the `journal` and `booktitle` of every entry in the bibliography,
+including entries listed in the ignore file, names each one that is or looks
+abbreviated, and makes the run fail:
+
+```text
+bibsync: journal in smith2024 is abbreviated: "Phys. Rev. D"; write "Physical Review D"
+```
+
+A name in bibsync's journal table is judged by the table: its abbreviations are
+always reported, with the full name to write, and its full names never are,
+even when written with a period where the table has a colon (`Journal of
+Physics. Conference Series`). Any other name is reported as looking abbreviated
+when it contains a word cut short with a period (`Phys.`, `J.Phys.`; `St.`,
+`Ste.`, `Mt.` and `Ft.` are allowed), or is a single short word with two or more
+capitals (`JCAP`). The parts of a concatenation are joined first, so
+`"Physical Review" # " D"` passes. A macro reference (`journal = prd`) is
+always reported, because bibsync cannot see the name it stands for, and so is an
+entry whose fields bibsync cannot read.
+
+The rule for names outside the table is a heuristic, so a real full title such
+as `RNA` can be reported. List the venue names to accept, one per line, in a
+file and pass it with `--accepted-venues`:
+
+```text
+# accepted-venues.txt
+RNA
+```
+
+```shell
+bibsync paper.md --check-venue-names --accepted-venues accepted-venues.txt
+```
+
+The file only accepts names the heuristic flags: listing an abbreviation from
+the journal table does not stop it being reported.
+
+For a JOSS paper's pre-commit hook, use both options together.
+
 From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
 `unexpanded_journals` lists the journal names that were left unchanged because
 they are not in the table.

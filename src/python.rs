@@ -1,6 +1,6 @@
 //! Python bindings for `bibsync`.
 
-use crate::{ProviderChoice, SyncOptions, UpdateMode, cli, sync_files};
+use crate::{ProviderChoice, SyncOptions, UpdateMode, VenueProblem, cli, sync_files};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -53,7 +53,9 @@ fn pathbufs(paths: Option<Vec<String>>) -> Vec<PathBuf> {
     cache_dir = None,
     ignore_file = None,
     full_journal_names = false,
-    full_author_lists = false
+    full_author_lists = false,
+    check_venue_names = false,
+    accepted_venues = None
 ))]
 fn sync_files_py<'py>(
     py: Python<'py>,
@@ -72,6 +74,8 @@ fn sync_files_py<'py>(
     ignore_file: Option<String>,
     full_journal_names: bool,
     full_author_lists: bool,
+    check_venue_names: bool,
+    accepted_venues: Option<String>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let options = SyncOptions {
         output: output.map(PathBuf::from),
@@ -88,6 +92,8 @@ fn sync_files_py<'py>(
         ignore_file: ignore_file.map(PathBuf::from),
         full_journal_names,
         full_author_lists,
+        check_venue_names,
+        accepted_venues: accepted_venues.map(PathBuf::from),
     };
     let files = files.into_iter().map(PathBuf::from).collect::<Vec<_>>();
     let report =
@@ -122,6 +128,26 @@ fn sync_files_py<'py>(
         })
         .collect::<PyResult<Vec<_>>>()?;
     dict.set_item("unexpanded_journals", unexpanded_journals)?;
+    let abbreviated_venues = report
+        .abbreviated_venues
+        .into_iter()
+        .map(|venue| {
+            let item = PyDict::new(py);
+            item.set_item("key", venue.key)?;
+            item.set_item("field", venue.field)?;
+            item.set_item("value", venue.value)?;
+            let (problem, full_name) = match venue.problem {
+                VenueProblem::KnownAbbreviation { full_name } => ("known_abbreviation", full_name),
+                VenueProblem::LooksAbbreviated => ("looks_abbreviated", String::new()),
+                VenueProblem::Macro => ("macro", String::new()),
+                VenueProblem::UnreadableEntry => ("unreadable_entry", String::new()),
+            };
+            item.set_item("problem", problem)?;
+            item.set_item("full_name", full_name)?;
+            Ok(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    dict.set_item("abbreviated_venues", abbreviated_venues)?;
     dict.set_item("truncated_author_lists", report.truncated_author_lists)?;
     dict.set_item("changed", report.changed)?;
     dict.set_item("check_mode", report.check_mode)?;
