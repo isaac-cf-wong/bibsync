@@ -888,6 +888,12 @@ impl BibEntry {
         let Some(text) = field.delimited_text(&self.body) else {
             return false;
         };
+        // `et~al.` uses a tie, and a long field may wrap anywhere.
+        let text = text
+            .replace('~', " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         let last = text.rsplit(" and ").next().unwrap_or_default();
         let last = last.trim().trim_matches(['{', '}']).trim().to_lowercase();
         text.contains(" and ") && (last == "others" || last == "et al." || last == "et al")
@@ -908,9 +914,14 @@ impl BibEntry {
         );
         let author =
             if list.authors.len() > COLLABORATION_AUTHOR_THRESHOLD && !collaborations.is_empty() {
-                let names = collaborations
+                let suffixed = collaborations
                     .iter()
                     .map(|name| collaboration_name(name))
+                    .collect::<Vec<_>>();
+                // `LIGO Scientific` and `LIGO Scientific Collaboration` are one name.
+                let names = distinct_names(suffixed.iter().map(String::as_str))
+                    .into_iter()
+                    .map(str::to_owned)
                     .collect::<Vec<_>>();
                 // One brace-protected corporate name, as citation styles expect.
                 format!("{{{}}}", join_with_and(&names))
@@ -1855,32 +1866,45 @@ impl BibliographyProvider for InspireProvider {
     }
 
     fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
-        const FIELDS: &str = "authors.full_name,collaborations";
+        const FIELDS: &str = "authors.full_name,collaborations,arxiv_eprints,dois";
         let id = entry.canonical_id.as_str();
         // Batch resolution records the INSPIRE record number; single-key
-        // resolution records the search query (`arxiv:...`, `doi:...`).
-        let metadata = if !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()) {
-            let response = self
-                .client
-                .get(format!("https://inspirehep.net/api/literature/{id}"))
-                .header(USER_AGENT, "bibsync/0.1")
-                .query(&[("fields", FIELDS)])
-                .send();
-            let response = provider_request(self.name(), id, response)?;
-            let response = provider_request(self.name(), id, response.error_for_status())?;
-            let record: InspireAuthorRecord = provider_request(self.name(), id, response.json())?;
-            Some(record.metadata)
-        } else {
-            let response = self
-                .client
-                .get("https://inspirehep.net/api/literature")
-                .header(USER_AGENT, "bibsync/0.1")
-                .query(&[("q", id), ("size", "1"), ("fields", FIELDS)])
-                .send();
-            let response = provider_request(self.name(), id, response)?;
-            let response = provider_request(self.name(), id, response.error_for_status())?;
-            let search: InspireAuthorSearch = provider_request(self.name(), id, response.json())?;
-            search.hits.hits.into_iter().next().map(|hit| hit.metadata)
+        // resolution records the search query (`arxiv:...`, `doi:...`). Any
+        // other id could match a different record, so it is not looked up.
+        let metadata = match inspire_author_lookup(id) {
+            None => None,
+            Some(InspireAuthorLookup::Record(record)) => {
+                let response = self
+                    .client
+                    .get(format!("https://inspirehep.net/api/literature/{record}"))
+                    .header(USER_AGENT, "bibsync/0.1")
+                    .query(&[("fields", FIELDS)])
+                    .send();
+                let response = provider_request(self.name(), id, response)?;
+                let response = provider_request(self.name(), id, response.error_for_status())?;
+                let record: InspireAuthorRecord =
+                    provider_request(self.name(), id, response.json())?;
+                Some(record.metadata)
+            }
+            Some(InspireAuthorLookup::Search { query, key }) => {
+                let response = self
+                    .client
+                    .get("https://inspirehep.net/api/literature")
+                    .header(USER_AGENT, "bibsync/0.1")
+                    .query(&[("q", query), ("size", "1"), ("fields", FIELDS)])
+                    .send();
+                let response = provider_request(self.name(), id, response)?;
+                let response = provider_request(self.name(), id, response.error_for_status())?;
+                let search: InspireAuthorSearch =
+                    provider_request(self.name(), id, response.json())?;
+                // Only accept the hit if it is the entry's own record.
+                search
+                    .hits
+                    .hits
+                    .into_iter()
+                    .map(|hit| hit.metadata)
+                    .find(|metadata| inspire_author_metadata_matches(metadata, key))
+            }
         };
         Ok(metadata.map(|metadata| AuthorList {
             authors: metadata
@@ -2031,6 +2055,45 @@ struct InspireAuthorMetadata {
     authors: Vec<InspireAuthor>,
     #[serde(default)]
     collaborations: Vec<InspireValue>,
+    #[serde(default)]
+    arxiv_eprints: Vec<InspireValue>,
+    #[serde(default)]
+    dois: Vec<InspireValue>,
+}
+
+/// How to fetch the authors for an `InspireHEP` canonical id.
+#[derive(Debug, PartialEq, Eq)]
+enum InspireAuthorLookup<'a> {
+    /// A record number: fetch that record.
+    Record(&'a str),
+    /// A stored `arxiv:`/`doi:` query, and the identifier the hit must carry.
+    Search { query: &'a str, key: &'a str },
+}
+
+fn inspire_author_lookup(id: &str) -> Option<InspireAuthorLookup<'_>> {
+    if !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Some(InspireAuthorLookup::Record(id));
+    }
+    let key = id
+        .strip_prefix("arxiv:")
+        .filter(|key| is_arxiv_id(key))
+        .or_else(|| id.strip_prefix("doi:").filter(|key| is_doi(key)))?;
+    Some(InspireAuthorLookup::Search { query: id, key })
+}
+
+fn inspire_author_metadata_matches(metadata: &InspireAuthorMetadata, key: &str) -> bool {
+    if is_arxiv_id(key) {
+        let normalized = normalize_arxiv_id(key);
+        metadata
+            .arxiv_eprints
+            .iter()
+            .any(|eprint| normalize_arxiv_id(&eprint.value) == normalized)
+    } else {
+        metadata
+            .dois
+            .iter()
+            .any(|doi| doi.value.eq_ignore_ascii_case(key))
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -2651,6 +2714,81 @@ mod tests {
             "{written}"
         );
         assert_eq!(report.truncated_author_lists, vec!["2001.00001"]);
+    }
+
+    #[test]
+    fn tie_and_wrapped_truncation_markers_are_detected() {
+        for author in [
+            "Author0, A. B. and et~al.",
+            "Author0, A. B. and\n        others",
+        ] {
+            let list = super::AuthorList {
+                authors: authors(3),
+                collaborations: Vec::new(),
+            };
+            let (written, _, calls) = sync_with_authors(&truncated_entry(author), Some(list), true);
+            assert_eq!(calls, 1, "{author:?}");
+            assert!(written.contains("Author2, A. B.\","), "{written}");
+        }
+    }
+
+    #[test]
+    fn collaboration_names_are_not_repeated_after_the_suffix() {
+        let list = super::AuthorList {
+            authors: authors(super::COLLABORATION_AUTHOR_THRESHOLD + 1),
+            collaborations: ["LIGO Scientific", "LIGO Scientific Collaboration"]
+                .map(str::to_owned)
+                .to_vec(),
+        };
+        let (written, _, _) =
+            sync_with_authors(&truncated_entry("Abac, A. G. and others"), Some(list), true);
+        assert!(
+            written.contains("  author = \"{LIGO Scientific Collaboration}\",\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn inspire_author_lookup_only_trusts_unambiguous_ids() {
+        use super::{InspireAuthorLookup, inspire_author_lookup};
+        assert_eq!(
+            inspire_author_lookup("2963711"),
+            Some(InspireAuthorLookup::Record("2963711"))
+        );
+        assert_eq!(
+            inspire_author_lookup("arxiv:2508.18083"),
+            Some(InspireAuthorLookup::Search {
+                query: "arxiv:2508.18083",
+                key: "2508.18083"
+            })
+        );
+        assert_eq!(
+            inspire_author_lookup("doi:10.3847/2041-8213/ae771e"),
+            Some(InspireAuthorLookup::Search {
+                query: "doi:10.3847/2041-8213/ae771e",
+                key: "10.3847/2041-8213/ae771e"
+            })
+        );
+        // A bare key searches as free text and an empty id matches anything.
+        assert_eq!(inspire_author_lookup("2508.18083"), None);
+        assert_eq!(inspire_author_lookup(""), None);
+        assert_eq!(inspire_author_lookup("arxiv:"), None);
+    }
+
+    #[test]
+    fn inspire_author_hit_must_be_the_entrys_record() {
+        let metadata: super::InspireAuthorMetadata = serde_json::from_str(
+            r#"{"authors": [{"full_name": "Stegmann, J."}], "arxiv_eprints": [{"value": "2508.18084"}]}"#,
+        )
+        .expect("json");
+        assert!(!super::inspire_author_metadata_matches(
+            &metadata,
+            "2508.18083"
+        ));
+        assert!(super::inspire_author_metadata_matches(
+            &metadata,
+            "arXiv:2508.18084"
+        ));
     }
 
     #[test]
