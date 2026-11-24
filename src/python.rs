@@ -51,7 +51,8 @@ fn pathbufs(paths: Option<Vec<String>>) -> Vec<PathBuf> {
     cache = false,
     refresh_cache = false,
     cache_dir = None,
-    ignore_file = None
+    ignore_file = None,
+    full_journal_names = false
 ))]
 fn sync_files_py<'py>(
     py: Python<'py>,
@@ -68,6 +69,7 @@ fn sync_files_py<'py>(
     refresh_cache: bool,
     cache_dir: Option<String>,
     ignore_file: Option<String>,
+    full_journal_names: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
     let options = SyncOptions {
         output: output.map(PathBuf::from),
@@ -82,6 +84,7 @@ fn sync_files_py<'py>(
         refresh_cache,
         cache_dir: cache_dir.map(PathBuf::from),
         ignore_file: ignore_file.map(PathBuf::from),
+        full_journal_names,
     };
     let files = files.into_iter().map(PathBuf::from).collect::<Vec<_>>();
     let report =
@@ -105,6 +108,17 @@ fn sync_files_py<'py>(
         })
         .collect::<PyResult<Vec<_>>>()?;
     dict.set_item("unresolved_details", unresolved_details)?;
+    let unexpanded_journals = report
+        .unexpanded_journals
+        .into_iter()
+        .map(|item| {
+            let entry = PyDict::new(py);
+            entry.set_item("key", item.key)?;
+            entry.set_item("journal", item.journal)?;
+            Ok(entry)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    dict.set_item("unexpanded_journals", unexpanded_journals)?;
     dict.set_item("changed", report.changed)?;
     dict.set_item("check_mode", report.check_mode)?;
     Ok(dict)
