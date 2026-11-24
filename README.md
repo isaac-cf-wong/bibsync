@@ -240,11 +240,12 @@ refreshed preprints, and everything with `--update-all` or
 `--force-regenerate`); entries already in the bibliography are not rewritten,
 so run once with `--force-regenerate` to convert an existing file. The full
 names come from a table maintained in `bibsync`
-([`src/journals.rs`](src/journals.rs)). A journal that looks abbreviated but is
-not in the table is left unchanged and reported, never guessed:
+([`src/journals.rs`](src/journals.rs)), which also lists journals whose short
+title is already their full name (`Nature`, `SoftwareX`). Any other journal is
+left unchanged and reported, never guessed, so you can check it by hand:
 
 ```text
-bibsync: no full name known for journal "Phys. Rev. Z" in 2001.00001; left unchanged
+bibsync: journal "Phys. Rev. Z" in 2001.00001 is not in bibsync's journal table; left unchanged, check that it is the full name
 ```
 
 ## Cache

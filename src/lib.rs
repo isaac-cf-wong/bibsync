@@ -194,8 +194,9 @@ pub struct SyncReport {
     pub unresolved: Vec<String>,
     /// Detailed diagnostics for citekeys that could not be resolved.
     pub unresolved_details: Vec<UnresolvedCitation>,
-    /// Abbreviated journal names that `full_journal_names` could not expand
-    /// because no full name is known for them. They are written unchanged.
+    /// Journal names that `full_journal_names` could not confirm as full:
+    /// not an abbreviation in bibsync's table and not one of its full names.
+    /// They are written unchanged.
     pub unexpanded_journals: Vec<UnexpandedJournal>,
     /// Whether the output file content changed.
     pub changed: bool,
@@ -845,8 +846,9 @@ impl BibEntry {
 
     /// Replace an abbreviated `journal` with its full name.
     ///
-    /// Returns the journal as written when it looks abbreviated but no full
-    /// name is known; such a name is left unchanged, never guessed.
+    /// Returns the journal as written when it is neither an abbreviation in
+    /// the table nor one of the table's full names; such a name is left
+    /// unchanged, never guessed, and reported so it can be checked by hand.
     fn expand_journal(&mut self) -> Option<String> {
         let field = fields::find_field(&self.body, "journal")?;
         let raw = &self.body[field.value_span.clone()];
@@ -861,7 +863,7 @@ impl BibEntry {
         if let Some(full) = journals::full_name(journal) {
             self.body = fields::replace_delimited_text(&self.body, &field, full);
             None
-        } else if bare || journals::looks_abbreviated(journal) {
+        } else if bare || !journals::is_known_full_name(journal) {
             Some(journal.to_owned())
         } else {
             None
@@ -2191,6 +2193,35 @@ mod tests {
             "{written}"
         );
         assert_eq!(report.unexpanded_journals[0].journal, "New J.Phys.");
+    }
+
+    #[test]
+    fn journals_outside_the_table_are_reported_not_guessed() {
+        for journal in [
+            "eConf",
+            "Bulletin of the Russian Academy of Sciences. Physics",
+            "RNA",
+            "Journal of Unlisted Studies",
+        ] {
+            let (written, report) = sync_single_entry_with(
+                "2001.00001",
+                &journal_entry(&format!("\"{journal}\"")),
+                with_full_journal_names(),
+            );
+            let expected = Some(journal);
+            assert!(
+                written.contains(&format!("    journal = \"{journal}\",\n")),
+                "{written}"
+            );
+            assert_eq!(
+                report
+                    .unexpanded_journals
+                    .first()
+                    .map(|item| item.journal.as_str()),
+                expected,
+                "{journal}"
+            );
+        }
     }
 
     #[test]
