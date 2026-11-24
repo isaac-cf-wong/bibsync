@@ -215,8 +215,16 @@ fn is_cut_word(word: &str) -> bool {
 
 /// Whether `journal` is written as one of the table's full names.
 pub(crate) fn is_known_full_name(journal: &str) -> bool {
-    let key = lookup_key(journal);
-    JOURNALS.iter().any(|(_, full)| lookup_key(full) == key)
+    let key = venue_key(journal);
+    JOURNALS.iter().any(|(_, full)| venue_key(full) == key)
+}
+
+/// A comparison key for a venue name that ignores case, whitespace, braces,
+/// ties and the punctuation between a title and its section, so
+/// `Journal of Physics. Conference Series` matches `Journal of Physics:
+/// Conference Series`.
+pub(crate) fn venue_key(venue: &str) -> String {
+    lookup_key(venue).replace(':', "")
 }
 
 fn lookup_key(journal: &str) -> String {

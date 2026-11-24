@@ -85,6 +85,24 @@ def test_sync_files_reports_abbreviated_venues(tmp_path: Path) -> None:
     ]
 
 
+def test_sync_files_accepts_listed_venue_names(tmp_path: Path) -> None:
+    bibliography = tmp_path / "references.bib"
+    bibliography.write_text(
+        COMPLETE_ENTRY.replace("Journal of Local Fixtures", "RNA"), encoding="utf-8"
+    )
+    accepted = tmp_path / "accepted-venues.txt"
+    accepted.write_text("RNA\n", encoding="utf-8")
+
+    report = bibsync.sync_files(
+        [str(bibliography)],
+        provider="inspire",
+        check_venue_names=True,
+        accepted_venues=str(accepted),
+    )
+
+    assert report["abbreviated_venues"] == []
+
+
 def test_sync_files_rejects_unknown_provider(tmp_path: Path) -> None:
     bibliography = tmp_path / "references.bib"
     bibliography.write_text(COMPLETE_ENTRY, encoding="utf-8")

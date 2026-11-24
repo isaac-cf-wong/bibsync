@@ -378,3 +378,31 @@ fn cli_check_venue_names_fails_on_abbreviated_journal() {
             "journal in smith2024 looks abbreviated: \"Phys. Rev. D\"",
         ));
 }
+
+/// In check mode a bibliography that also needs updating must still name its
+/// abbreviated venues before the run stops with "out of date".
+#[test]
+fn cli_check_venue_names_reports_before_out_of_date() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    // Entries out of key order, so the written file would change.
+    std::fs::write(
+        &bib,
+        "@article{zeta2024,\n  author = {Zeta, Z.},\n  journal = {Phys. Rev. D},\n  year = {2024}\n}\n\n@article{alpha2024,\n  author = {Alpha, A.},\n  journal = {Physical Review D},\n  year = {2024}\n}\n",
+    )
+    .expect("write bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--no-update")
+        .arg("--check-venue-names")
+        .arg(&bib)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("out of date"))
+        .stderr(predicate::str::contains(
+            "journal in zeta2024 looks abbreviated: \"Phys. Rev. D\"",
+        ));
+}

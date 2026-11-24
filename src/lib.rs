@@ -158,6 +158,9 @@ pub struct SyncOptions {
     /// Report every entry in the bibliography (including ignored and
     /// existing ones) whose `journal` or `booktitle` looks abbreviated.
     pub check_venue_names: bool,
+    /// File of venue names that `check_venue_names` accepts as full names,
+    /// one per line (`#` starts a comment). Must exist when given.
+    pub accepted_venues: Option<PathBuf>,
     /// Replace author lists that the provider truncated to `... and others`
     /// with the complete list (or, for large collaboration papers, the
     /// collaborations) in entries resolved from a provider.
@@ -181,6 +184,7 @@ impl Default for SyncOptions {
             ignore_file: None,
             full_journal_names: false,
             check_venue_names: false,
+            accepted_venues: None,
             full_author_lists: false,
         }
     }
@@ -431,7 +435,7 @@ pub fn sync_files_with_provider(
     }
 
     let ignore_set = if let Some(ref path) = options.ignore_file {
-        load_ignore_set(path)?
+        load_ignore_set(path, "ignore file")?
     } else {
         BTreeSet::new()
     };
@@ -558,7 +562,14 @@ pub fn sync_files_with_provider(
     }
 
     if options.check_venue_names {
-        report.abbreviated_venues = bibliography.abbreviated_venues();
+        let accepted = match &options.accepted_venues {
+            Some(path) => load_ignore_set(path, "accepted venues file")?
+                .iter()
+                .map(|name| journals::venue_key(name))
+                .collect(),
+            None => BTreeSet::new(),
+        };
+        report.abbreviated_venues = bibliography.abbreviated_venues(&accepted);
     }
 
     let new_content = bibliography.to_string();
@@ -1115,22 +1126,41 @@ impl Bibliography {
     }
 
     /// Every `journal` or `booktitle` value in the bibliography that looks
-    /// abbreviated, in citekey order.
-    fn abbreviated_venues(&self) -> Vec<AbbreviatedVenue> {
+    /// abbreviated, in citekey order. Names whose venue key is in `accepted`
+    /// are not reported. A bare value is a macro reference and a
+    /// concatenation cannot be judged, so both are reported as written; an
+    /// entry whose fields cannot be read is reported rather than skipped.
+    fn abbreviated_venues(&self, accepted: &BTreeSet<String>) -> Vec<AbbreviatedVenue> {
         let mut found = Vec::new();
         for entry in self.entries.values() {
-            for field in fields::parse_fields(&entry.body).unwrap_or_default() {
+            let Some(entry_fields) = fields::parse_fields(&entry.body) else {
+                found.push(AbbreviatedVenue {
+                    key: entry.key.clone(),
+                    field: "entry".to_owned(),
+                    value: "fields could not be read; check journal and booktitle by hand"
+                        .to_owned(),
+                });
+                continue;
+            };
+            for field in entry_fields {
                 if field.name != "journal" && field.name != "booktitle" {
                     continue;
                 }
-                let value = field
-                    .delimited_text(&entry.body)
-                    .unwrap_or(&entry.body[field.value_span.clone()]);
-                if !value.trim().is_empty() && journals::venue_looks_abbreviated(value) {
+                let raw = &entry.body[field.value_span.clone()];
+                let report = match field.delimited_text(&entry.body) {
+                    Some(text) => {
+                        !text.trim().is_empty()
+                            && !accepted.contains(&journals::venue_key(text))
+                            && journals::venue_looks_abbreviated(text)
+                    }
+                    // A macro (`journal = prd`) or a concatenation.
+                    None => !accepted.contains(&journals::venue_key(raw)),
+                };
+                if report {
                     found.push(AbbreviatedVenue {
                         key: entry.key.clone(),
                         field: field.name.clone(),
-                        value: value.to_owned(),
+                        value: field.delimited_text(&entry.body).unwrap_or(raw).to_owned(),
                     });
                 }
             }
@@ -1291,8 +1321,8 @@ fn is_supported_identifier(key: &str) -> bool {
     is_arxiv_id(key) || is_doi(key) || is_ads_bibcode(key)
 }
 
-fn load_ignore_set(path: &Path) -> Result<BTreeSet<String>> {
-    let content = read_to_string_existing(path, "ignore file")?;
+fn load_ignore_set(path: &Path, role: &'static str) -> Result<BTreeSet<String>> {
+    let content = read_to_string_existing(path, role)?;
     Ok(content
         .lines()
         .map(str::trim)
@@ -3041,6 +3071,92 @@ mod tests {
                 ("existing", "journal", "JCAP"),
             ]
         );
+    }
+
+    fn venue_report(bib_text: &str, accepted: Option<&str>) -> Vec<(String, String, String)> {
+        let dir = tempdir().expect("tempdir");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&bib, bib_text).expect("write bib");
+        let accepted_path = accepted.map(|names| {
+            let path = dir.path().join("accepted-venues.txt");
+            std::fs::write(&path, names).expect("write accepted venues");
+            path
+        });
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+        let report = sync_files_with_provider(
+            &[bib],
+            &SyncOptions {
+                provider: ProviderChoice::Inspire,
+                check: true,
+                update_mode: super::UpdateMode::Never,
+                check_venue_names: true,
+                accepted_venues: accepted_path,
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync");
+        report
+            .abbreviated_venues
+            .into_iter()
+            .map(|venue| (venue.key, venue.field, venue.value))
+            .collect()
+    }
+
+    #[test]
+    fn venue_check_reports_macros_concatenations_and_unreadable_entries() {
+        let found = venue_report(
+            "@article{bare,\n  journal = prd\n}\n\n\
+             @article{concat,\n  journal = \"Phys. Rev.\" # \" D\"\n}\n\n\
+             @article{unreadable,\n  journal {Phys. Rev. D},\n  booktitle = {Proc. SPIE}\n}\n",
+            None,
+        );
+        let keys = found
+            .iter()
+            .map(|(key, field, _)| (key.as_str(), field.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            keys,
+            [
+                ("bare", "journal"),
+                ("concat", "journal"),
+                ("unreadable", "entry")
+            ]
+        );
+    }
+
+    #[test]
+    fn accepted_venues_are_not_reported() {
+        let bib = "@article{rna,\n  journal = {RNA}\n}\n\n\
+                   @article{bulletin,\n  journal = {Bulletin of the Russian Academy of Sciences. Physics}\n}\n\n\
+                   @article{prd,\n  journal = {Phys. Rev. D}\n}\n";
+        let unaccepted = venue_report(bib, None);
+        assert_eq!(unaccepted.len(), 3, "{unaccepted:?}");
+        let accepted = venue_report(
+            bib,
+            Some(
+                "# full names the heuristic flags\nRNA\nBulletin of the Russian Academy of Sciences: Physics\n",
+            ),
+        );
+        assert_eq!(
+            accepted,
+            [(
+                "prd".to_owned(),
+                "journal".to_owned(),
+                "Phys. Rev. D".to_owned()
+            )]
+        );
+    }
+
+    #[test]
+    fn table_full_name_with_a_period_for_its_colon_is_not_reported() {
+        let found = venue_report(
+            "@article{jpcs,\n  journal = {Journal of Physics. Conference Series}\n}\n",
+            None,
+        );
+        assert_eq!(found, Vec::<(String, String, String)>::new());
     }
 
     #[test]

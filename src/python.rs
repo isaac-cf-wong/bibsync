@@ -54,7 +54,8 @@ fn pathbufs(paths: Option<Vec<String>>) -> Vec<PathBuf> {
     ignore_file = None,
     full_journal_names = false,
     full_author_lists = false,
-    check_venue_names = false
+    check_venue_names = false,
+    accepted_venues = None
 ))]
 fn sync_files_py<'py>(
     py: Python<'py>,
@@ -74,6 +75,7 @@ fn sync_files_py<'py>(
     full_journal_names: bool,
     full_author_lists: bool,
     check_venue_names: bool,
+    accepted_venues: Option<String>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let options = SyncOptions {
         output: output.map(PathBuf::from),
@@ -91,6 +93,7 @@ fn sync_files_py<'py>(
         full_journal_names,
         full_author_lists,
         check_venue_names,
+        accepted_venues: accepted_venues.map(PathBuf::from),
     };
     let files = files.into_iter().map(PathBuf::from).collect::<Vec<_>>();
     let report =

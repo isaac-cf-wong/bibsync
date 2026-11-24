@@ -231,13 +231,28 @@ bibsync: journal in smith2024 looks abbreviated: "Phys. Rev. D"; write the full 
 ```
 
 An abbreviation in bibsync's journal table is always reported and a full name
-in it never is. Any other name counts as abbreviated when it is an unexpanded
-macro (`\prd`), contains a word cut short with a period (`Phys.`, `J.Phys.`;
-`St.`, `Ste.`, `Mt.` and `Ft.` are allowed), or is a single short word with two
-or more capitals (`JCAP`). That last part is a heuristic: a full title written
-that way, such as `RNA` or `Bulletin of the Russian Academy of Sciences.
-Physics`, is reported too. For a JOSS paper's pre-commit hook, use both options
-together.
+in it never is, even when written with a period where the table has a colon
+(`Journal of Physics. Conference Series`). Any other name counts as abbreviated
+when it is an unexpanded macro (`\prd`, `prd`), contains a word cut short with
+a period (`Phys.`, `J.Phys.`; `St.`, `Ste.`, `Mt.` and `Ft.` are allowed), or is
+a single short word with two or more capitals (`JCAP`). Concatenated values and
+entries whose fields bibsync cannot read are reported so you can check them by
+hand.
+
+That last rule is a heuristic, so a real full title such as `RNA` can be
+reported. List the venue names to accept, one per line, in a file and pass it
+with `--accepted-venues`:
+
+```text
+# accepted-venues.txt
+RNA
+```
+
+```shell
+bibsync paper.md --check-venue-names --accepted-venues accepted-venues.txt
+```
+
+For a JOSS paper's pre-commit hook, use both options together.
 
 From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
 `unexpanded_journals` lists the journal names that were left unchanged because

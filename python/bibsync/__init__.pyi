@@ -32,5 +32,6 @@ def sync_files(
     full_journal_names: bool = False,
     full_author_lists: bool = False,
     check_venue_names: bool = False,
+    accepted_venues: str | None = None,
 ) -> SyncReport: ...
 def main(argv: Sequence[str] | None = None) -> int: ...

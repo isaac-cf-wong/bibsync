@@ -68,6 +68,11 @@ struct Cli {
     #[arg(long = "check-venue-names")]
     check_venue_names: bool,
 
+    /// File of venue names that --check-venue-names accepts as full names,
+    /// one per line (supports # comments).
+    #[arg(long = "accepted-venues", value_name = "FILE")]
+    accepted_venues: Option<PathBuf>,
+
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
     merge_other: bool,
@@ -173,6 +178,7 @@ where
         ignore_file: cli.ignore_file,
         full_journal_names: cli.full_journal_names,
         check_venue_names: cli.check_venue_names,
+        accepted_venues: cli.accepted_venues,
         full_author_lists: cli.full_author_lists,
     };
 
@@ -208,6 +214,12 @@ where
                     unexpanded.journal, unexpanded.key
                 );
             }
+            for venue in &report.abbreviated_venues {
+                eprintln!(
+                    "bibsync: {} in {} looks abbreviated: {:?}; write the full venue name, or list it in --accepted-venues",
+                    venue.field, venue.key, venue.value
+                );
+            }
             if report.changed {
                 if report.check_mode {
                     eprintln!(
@@ -218,12 +230,6 @@ where
                 println!("wrote updated bibliography");
             } else {
                 println!("bibliography is up to date");
-            }
-            for venue in &report.abbreviated_venues {
-                eprintln!(
-                    "bibsync: {} in {} looks abbreviated: {:?}; write the full venue name",
-                    venue.field, venue.key, venue.value
-                );
             }
             i32::from(!report.unresolved.is_empty() || !report.abbreviated_venues.is_empty())
         }
