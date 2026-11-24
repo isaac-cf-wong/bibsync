@@ -268,15 +268,24 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            files: ^paper\.md$
-            args: [--fix, --cache, --provider, inspire, --output, paper.bib]
+            files: ^paper\.(md|bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
 ```
 
-The `--output` bibliography is read and written even when it is not itself
-matched by `files:`, so scoping to `paper.md` still keeps `paper.bib` in sync.
+**Name the citing document in `args` and set `pass_filenames: false`.**
+pre-commit passes the hook only the staged files that match. When a commit
+changes `paper.bib` but not `paper.md`, `bibsync` would receive only
+`paper.bib`; it then checks that file's own entries and never reads which keys
+`paper.md` cites, so deleting a cited entry from `paper.bib` would pass. With
+`pass_filenames: false` the hook always scans `paper.md`, and `files:` makes it
+run whenever either file changes. For a LaTeX project, list the `.tex` files
+that cite (for example `main.tex`) in `args` and match them and the `.bib` file
+in `files:`.
 
-The remaining examples below omit `files:` for brevity; add it to match your
-project layout.
+**Every configuration needs both settings.** The examples below use a LaTeX
+project whose `main.tex` cites into `references.bib`; replace those names with
+your own citing files and bibliography in both `files:` and `args`.
 
 Use the pre-built binary hook for faster installs:
 
@@ -286,7 +295,9 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            args: [--cache, --provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--cache, --provider, inspire, --output, references.bib, main.tex]
 ```
 
 The binary hook downloads a platform-specific archive from the GitHub release
@@ -301,7 +312,9 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync
-            args: [--provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--provider, inspire, --output, references.bib, main.tex]
 ```
 
 By default, the hook checks whether the bibliography is current and fails without
@@ -313,7 +326,9 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            args: [--fix, --cache, --provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, references.bib, main.tex]
 ```
 
 To skip manually curated entries, add `--ignore-file`:
@@ -324,6 +339,8 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync-bin
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
             args:
                 [
                     --fix,
@@ -334,6 +351,7 @@ repos:
                     references.bib,
                     --ignore-file,
                     .bibsyncignore,
+                    main.tex,
                 ]
 ```
 
@@ -345,7 +363,8 @@ repos:
       hooks:
           - id: bibsync
             name: bibsync
-            entry: cargo run -- --fix --provider inspire --output references.bib
+            entry: cargo run -- --fix --provider inspire --output references.bib main.tex
             language: system
-            files: \.tex$
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
 ```

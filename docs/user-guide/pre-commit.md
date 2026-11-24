@@ -3,6 +3,12 @@
 `bibsync` includes a pre-commit hook manifest, `.pre-commit-hooks.yaml`, so other
 repositories can run it before commits.
 
+Every example on this page names the citing document in `args` and sets
+`pass_filenames: false`; see
+[Run The Hook When Either File Changes](#run-the-hook-when-either-file-changes)
+for why both are needed. The examples use a LaTeX project whose `main.tex` cites
+into `references.bib`; replace those names with your own files.
+
 By default, the hook runs `bibsync` in check mode. If new entries are needed,
 the hook fails without writing changes. Add `--fix` to the hook arguments when
 you want the hook to update the configured bibliography file.
@@ -14,10 +20,12 @@ Use the pre-built binary hook for faster installation:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.1.0
+      rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            args: [--cache, --provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--cache, --provider, inspire, --output, references.bib, main.tex]
 ```
 
 The binary hook downloads a platform-specific archive from the GitHub release
@@ -32,24 +40,48 @@ The source hook is still available when you prefer to build from source:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.1.0
+      rev: v1.0.2
       hooks:
           - id: bibsync
-            args: [--cache, --provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--cache, --provider, inspire, --output, references.bib, main.tex]
 ```
 
-The hook receives changed file paths from pre-commit. In most projects, restrict
-the hook to TeX sources so it runs only when citations may have changed.
+## Run The Hook When Either File Changes
+
+pre-commit passes the hook only the staged files that match it. If a commit
+changes the bibliography but not the document that cites it, `bibsync` receives
+only the `.bib` file; it then checks that file's own entries and never reads
+which keys the document cites, so deleting a cited entry from the bibliography
+would pass. Name the citing documents in `args`, set `pass_filenames: false`,
+and match both the documents and the bibliography in `files:`:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v1.0.2
+      hooks:
+          - id: bibsync-bin
+            files: ^paper\.(md|bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
+```
+
+For a LaTeX project, list the citing `.tex` files (for example `main.tex`) in
+`args` instead of `paper.md`, and match them and the `.bib` file in `files:`.
 
 For update behavior:
 
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.1.0
+      rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            args: [--fix, --cache, --provider, inspire, --output, references.bib]
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, references.bib, main.tex]
 ```
 
 To skip specific citekeys such as manually curated books or theses, add an
@@ -58,9 +90,11 @@ To skip specific citekeys such as manually curated books or theses, add an
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v0.1.0
+      rev: v1.0.2
       hooks:
           - id: bibsync-bin
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
             args:
                 [
                     --fix,
@@ -71,6 +105,7 @@ repos:
                     references.bib,
                     --ignore-file,
                     .bibsyncignore,
+                    main.tex,
                 ]
 ```
 
@@ -85,9 +120,10 @@ repos:
       hooks:
           - id: bibsync
             name: bibsync
-            entry: cargo run -- --fix --cache --provider inspire --output references.bib
+            entry: cargo run -- --fix --cache --provider inspire --output references.bib main.tex
             language: system
-            files: \.tex$
+            files: ^(main\.tex|references\.bib)$
+            pass_filenames: false
 ```
 
 This uses the local checkout rather than installing from a tagged release.
