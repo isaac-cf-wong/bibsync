@@ -2,8 +2,10 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": ["config:recommended", "config:best-practices", ":semanticCommitTypeAll(chore)"],
     "labels": ["dependencies"],
-    "dependencyDashboard": true,
-    "dependencyDashboardTitle": "Dependency Dashboard",
+    "dependencyDashboard": {
+        "enabled": true,
+        "title": "Dependency Dashboard"
+    },
     "pre-commit": {
         "enabled": true
     },
