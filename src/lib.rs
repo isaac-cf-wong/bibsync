@@ -18,6 +18,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 pub mod cli;
+mod fields;
 
 #[cfg(feature = "python")]
 mod python;
@@ -453,6 +454,7 @@ pub fn sync_files_with_provider(
             }
         })?;
         entry.key.clone_from(key);
+        entry.normalize_collaboration();
 
         // For preprint refresh: skip the upsert if still a preprint — the
         // entry is only updated when the provider confirms it is now published.
@@ -772,6 +774,38 @@ impl BibEntry {
             self.key,
             indent_body(&self.body)
         )
+    }
+
+    /// Drop empty and repeated names from the `collaboration` field.
+    ///
+    /// Providers occasionally carry stray separators (`"LIGO Scientific,
+    /// VIRGO, Virgo,, KAGRA"`). A list with no empty or repeated name is left
+    /// exactly as written; otherwise the remaining names are joined with
+    /// `", "`, keeping the first spelling of each (compared case-insensitively).
+    /// A field with no names left is removed.
+    fn normalize_collaboration(&mut self) {
+        let Some(field) = fields::find_field(&self.body, "collaboration") else {
+            return;
+        };
+        let Some(text) = field.delimited_text(&self.body) else {
+            return;
+        };
+        let names = fields::split_top_level(text, ',');
+        let mut kept: Vec<&str> = Vec::new();
+        for name in &names {
+            let name = name.trim();
+            if !name.is_empty() && !kept.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+                kept.push(name);
+            }
+        }
+        if kept.len() == names.len() {
+            return;
+        }
+        self.body = if kept.is_empty() {
+            fields::remove_field(&self.body, &field)
+        } else {
+            fields::replace_delimited_text(&self.body, &field, &kept.join(", "))
+        };
     }
 
     /// Returns true if the entry appears to be an unpublished preprint.
@@ -1924,6 +1958,75 @@ mod tests {
             std::fs::read_to_string(bib)
                 .expect("read bib")
                 .contains("@article{2404.14498")
+        );
+    }
+
+    /// Sync one cited key whose provider entry is `bibtex`; return the written bibliography.
+    fn sync_single_entry(key: &str, bibtex: &str) -> String {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&tex, format!("\\cite{{{key}}}\n\\bibliography{{refs}}"))
+            .expect("write tex");
+        let provider = FakeProvider {
+            entries: BTreeMap::from([(key.to_owned(), bibtex.to_owned())]),
+        };
+        sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib.clone()),
+                provider: ProviderChoice::Inspire,
+                backup: false,
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync");
+        std::fs::read_to_string(bib).expect("read bib")
+    }
+
+    /// The `collaboration` field as `InspireHEP` returns it for GWTC-4.0 (arXiv:2508.18083).
+    const GWTC4_INSPIRE: &str = "@article{LIGOScientific:2025pvj,\n    author = \"Abac, A. G. and others\",\n    collaboration = \"LIGO Scientific, VIRGO, Virgo,, KAGRA\",\n    title = \"{GWTC-4.0: Population Properties of Merging Compact Binaries}\",\n    eprint = \"2508.18083\",\n    archivePrefix = \"arXiv\",\n    journal = \"Astrophys. J. Lett.\",\n    year = \"2026\"\n}";
+
+    #[test]
+    fn collaboration_drops_empty_and_repeated_names() {
+        let written = sync_single_entry("2508.18083", GWTC4_INSPIRE);
+        assert!(
+            written.contains("    collaboration = \"LIGO Scientific, VIRGO, KAGRA\",\n"),
+            "{written}"
+        );
+        assert!(!written.contains(",,"), "{written}");
+    }
+
+    #[test]
+    fn well_formed_collaboration_is_written_unchanged() {
+        for collaboration in [
+            "\"LIGO Scientific, Virgo\"",
+            "\"LIGO Scientific,Virgo\"",
+            "{{LIGO Scientific, Virgo}, KAGRA}",
+            "\"ET\"",
+        ] {
+            let bibtex = format!(
+                "@article{{x,\n    author = \"A, B.\",\n    collaboration = {collaboration},\n    year = \"2020\"\n}}"
+            );
+            let written = sync_single_entry("2001.00001", &bibtex);
+            assert!(
+                written.contains(&format!("    collaboration = {collaboration},\n")),
+                "{written}"
+            );
+        }
+    }
+
+    #[test]
+    fn collaboration_with_no_names_is_removed() {
+        let written = sync_single_entry(
+            "2001.00001",
+            "@article{x,\n    author = \"A, B.\",\n    collaboration = \", ,\",\n    year = \"2020\"\n}",
+        );
+        assert!(!written.contains("collaboration"), "{written}");
+        assert!(
+            written.contains("author = \"A, B.\",\n    year = \"2020\""),
+            "{written}"
         );
     }
 
