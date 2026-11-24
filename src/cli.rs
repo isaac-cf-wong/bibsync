@@ -51,6 +51,15 @@ struct Cli {
     #[arg(long = "full-journal-names")]
     full_journal_names: bool,
 
+    /// Replace author lists the provider truncated to "... and others" with
+    /// the complete list.
+    ///
+    /// Papers with more than 100 authors that name a collaboration are
+    /// credited to the collaboration(s) instead. Applies to entries resolved
+    /// from a provider.
+    #[arg(long = "full-author-lists")]
+    full_author_lists: bool,
+
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
     merge_other: bool,
@@ -155,6 +164,7 @@ where
         cache_dir: cli.cache_dir,
         ignore_file: cli.ignore_file,
         full_journal_names: cli.full_journal_names,
+        full_author_lists: cli.full_author_lists,
     };
 
     match sync_files(&cli.files, &options) {
@@ -177,6 +187,11 @@ where
                 for detail in &report.unresolved_details {
                     println!("  {}: {}", detail.key, detail.reason);
                 }
+            }
+            for key in &report.truncated_author_lists {
+                eprintln!(
+                    "bibsync: the provider gave no full author list for {key}; left truncated"
+                );
             }
             for unexpanded in &report.unexpanded_journals {
                 eprintln!(
