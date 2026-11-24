@@ -184,13 +184,18 @@ fn value_end(bytes: &[u8], start: usize) -> Option<usize> {
         }
         b'"' => {
             let mut depth = 0_i32;
-            for (offset, byte) in bytes[start + 1..].iter().enumerate() {
-                match byte {
+            let mut index = start + 1;
+            while index < bytes.len() {
+                match bytes[index] {
+                    // A backslash escapes the next byte, so `\"` (an accent
+                    // such as `J\"{u}rg`) is content and `\\"` still closes.
+                    b'\\' => index += 1,
                     b'{' => depth += 1,
                     b'}' => depth -= 1,
-                    b'"' if depth == 0 => return Some(start + 1 + offset + 1),
+                    b'"' if depth == 0 => return Some(index + 1),
                     _ => {}
                 }
+                index += 1;
             }
             None
         }
@@ -225,6 +230,17 @@ mod tests {
             fields[2].delimited_text(BODY),
             Some("{GWTC-4.0: Population Properties}")
         );
+    }
+
+    #[test]
+    fn backslash_escapes_inside_quoted_values() {
+        let body = "title = \"J\\\"{u}rg\", note = \"path\\\\\", collaboration = \"LIGO,, Virgo\"";
+        let fields = parse_fields(body).expect("parses");
+        let names = fields.iter().map(|f| f.name.as_str()).collect::<Vec<_>>();
+        assert_eq!(names, ["title", "note", "collaboration"]);
+        assert_eq!(fields[0].delimited_text(body), Some("J\\\"{u}rg"));
+        assert_eq!(fields[1].delimited_text(body), Some("path\\\\"));
+        assert_eq!(fields[2].delimited_text(body), Some("LIGO,, Virgo"));
     }
 
     #[test]

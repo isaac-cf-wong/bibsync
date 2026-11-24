@@ -802,7 +802,13 @@ impl BibEntry {
             return;
         }
         self.body = if kept.is_empty() {
-            fields::remove_field(&self.body, &field)
+            let removed = fields::remove_field(&self.body, &field);
+            if removed.trim().is_empty() {
+                // An entry needs at least one field to be read back.
+                fields::replace_delimited_text(&self.body, &field, "")
+            } else {
+                removed
+            }
         } else {
             fields::replace_delimited_text(&self.body, &field, &kept.join(", "))
         };
@@ -2028,6 +2034,44 @@ mod tests {
             written.contains("author = \"A, B.\",\n    year = \"2020\""),
             "{written}"
         );
+    }
+
+    #[test]
+    fn collaboration_after_an_escaped_quote_is_normalised() {
+        let written = sync_single_entry(
+            "2001.00001",
+            "@article{x,\n    title = \"J\\\"{u}rg\",\n    collaboration = \"LIGO,, Virgo\",\n    year = \"2020\"\n}",
+        );
+        assert!(
+            written.contains("    collaboration = \"LIGO, Virgo\",\n"),
+            "{written}"
+        );
+        assert!(written.contains("title = \"J\\\"{u}rg\",\n"), "{written}");
+    }
+
+    #[test]
+    fn collaboration_only_entry_stays_readable() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&tex, "\\cite{2001.00001}\n\\bibliography{refs}").expect("write tex");
+        let provider = FakeProvider {
+            entries: BTreeMap::from([(
+                "2001.00001".to_owned(),
+                "@misc{x,\n    collaboration = \", ,\"\n}".to_owned(),
+            )]),
+        };
+        let options = SyncOptions {
+            output: Some(bib.clone()),
+            provider: ProviderChoice::Inspire,
+            backup: false,
+            ..SyncOptions::default()
+        };
+        sync_files_with_provider(std::slice::from_ref(&tex), &options, &provider).expect("sync");
+        let written = std::fs::read_to_string(&bib).expect("read bib");
+        assert!(written.contains("collaboration = \"\""), "{written}");
+        // The written file must parse on the next run.
+        sync_files_with_provider(&[tex], &options, &provider).expect("second sync");
     }
 
     #[test]
