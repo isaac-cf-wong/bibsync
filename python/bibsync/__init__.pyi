@@ -10,6 +10,7 @@ class SyncReport(TypedDict):
     unresolved: list[str]
     unresolved_details: list[dict[str, str]]
     unexpanded_journals: list[dict[str, str]]
+    truncated_author_lists: list[str]
     changed: bool
     check_mode: bool
 
@@ -28,5 +29,6 @@ def sync_files(
     cache_dir: str | None = None,
     ignore_file: str | None = None,
     full_journal_names: bool = False,
+    full_author_lists: bool = False,
 ) -> SyncReport: ...
 def main(argv: Sequence[str] | None = None) -> int: ...
