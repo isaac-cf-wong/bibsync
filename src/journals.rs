@@ -69,14 +69,14 @@ const JOURNALS: &[(&str, &str)] = &[
     ("New Astron. Rev.", "New Astronomy Reviews"),
     (
         "Nucl. Instrum. Meth. A",
-        "Nuclear Instruments and Methods in Physics Research Section A",
+        "Nuclear Instruments and Methods in Physics Research Section A: Accelerators, Spectrometers, Detectors and Associated Equipment",
     ),
     ("Nucl. Phys. B", "Nuclear Physics B"),
     ("Open J. Astrophys.", "The Open Journal of Astrophysics"),
     ("Opt. Express", "Optics Express"),
     (
         "Phil. Trans. Roy. Soc. Lond. A",
-        "Philosophical Transactions of the Royal Society A",
+        "Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences",
     ),
     ("Phys. Dark Univ.", "Physics of the Dark Universe"),
     ("Phys. Lett. B", "Physics Letters B"),
@@ -89,7 +89,7 @@ const JOURNALS: &[(&str, &str)] = &[
     ("Phys. Rev. D", "Physical Review D"),
     ("Phys. Rev. E", "Physical Review E"),
     ("Phys. Rev. Lett.", "Physical Review Letters"),
-    ("Phys. Rev. Research", "Physical Review Research"),
+    ("Phys. Rev. Res.", "Physical Review Research"),
     ("Phys. Rev. X", "Physical Review X"),
     ("Proc. SPIE Int. Soc. Opt. Eng.", "Proceedings of SPIE"),
     ("PTEP", "Progress of Theoretical and Experimental Physics"),
@@ -164,24 +164,32 @@ pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
         .map(|(_, full)| *full)
 }
 
-/// Whether a journal name looks abbreviated: an unexpanded macro (`\prd`), a
-/// word cut short with a period (`Phys.`), or a short all-capitals acronym
-/// standing alone (`JCAP`).
+/// Whether a journal name looks abbreviated: an unexpanded macro (`\\prd`), a
+/// word cut short with a period (`Phys.`, or `J.Phys.` written without
+/// spaces), or a short all-capitals acronym standing alone (`JCAP`).
 pub(crate) fn looks_abbreviated(journal: &str) -> bool {
     let name = journal.trim().trim_matches(['{', '}']).trim();
     if name.starts_with('\\') {
         return true;
     }
     let words = name.split_whitespace().collect::<Vec<_>>();
-    let cut_word = words.iter().any(|word| {
-        word.ends_with('.')
-            && word.trim_end_matches('.').chars().all(char::is_alphabetic)
-            && !FULL_NAME_ABBREVIATIONS.contains(word)
-    }) || (words.len() == 1 && name.contains('.'));
+    let cut_word = words.iter().any(|word| is_cut_word(word));
     let acronym = words.len() == 1
         && (2..=6).contains(&name.chars().count())
         && name.chars().filter(char::is_ascii_uppercase).count() >= 2;
     cut_word || acronym
+}
+
+/// A word containing a period whose period-separated pieces are short runs of
+/// letters (`Phys.`, `J.Phys.`, `Rev.Mod.Phys.`). Longer pieces such as
+/// `Astrophysics.` end a phrase rather than cut a word short.
+fn is_cut_word(word: &str) -> bool {
+    const MAX_CUT_LETTERS: usize = 9;
+    word.contains('.')
+        && !FULL_NAME_ABBREVIATIONS.contains(&word)
+        && word.split('.').all(|piece| {
+            piece.chars().all(char::is_alphabetic) && piece.chars().count() <= MAX_CUT_LETTERS
+        })
 }
 
 fn lookup_key(journal: &str) -> String {
@@ -230,6 +238,9 @@ mod tests {
             "{\\mnras}",
             "ApJL",
             "J.Phys.",
+            "New J.Phys.",
+            "AIP Conf.Proc.",
+            "Phys. Rev. Res.",
         ] {
             assert!(looks_abbreviated(name), "{name}");
         }
@@ -238,6 +249,8 @@ mod tests {
             "Nature",
             "SoftwareX",
             "St. Petersburg Mathematical Journal",
+            "Astronomy and Astrophysics. Supplement Series",
+            "Physical Review Research",
         ] {
             assert!(!looks_abbreviated(name), "{name}");
         }
