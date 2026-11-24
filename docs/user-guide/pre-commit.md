@@ -20,7 +20,7 @@ Use the pre-built binary hook for faster installation:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v1.0.2
+      rev: v2.0.0
       hooks:
           - id: bibsync-bin
             files: ^(main\.tex|references\.bib)$
@@ -40,7 +40,7 @@ The source hook is still available when you prefer to build from source:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v1.0.2
+      rev: v2.0.0
       hooks:
           - id: bibsync
             files: ^(main\.tex|references\.bib)$
@@ -60,7 +60,7 @@ and match both the documents and the bibliography in `files:`:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v1.0.2
+      rev: v2.0.0
       hooks:
           - id: bibsync-bin
             files: ^paper\.(md|bib)$
@@ -92,7 +92,7 @@ For update behavior:
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v1.0.2
+      rev: v2.0.0
       hooks:
           - id: bibsync-bin
             files: ^(main\.tex|references\.bib)$
@@ -106,7 +106,7 @@ To skip specific citekeys such as manually curated books or theses, add an
 ```yaml
 repos:
     - repo: https://github.com/isaac-cf-wong/bibsync
-      rev: v1.0.2
+      rev: v2.0.0
       hooks:
           - id: bibsync-bin
             files: ^(main\.tex|references\.bib)$
