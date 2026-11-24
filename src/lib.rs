@@ -2914,7 +2914,7 @@ mod tests {
     }
 
     #[test]
-    fn inspire_author_hit_must_be_the_entrys_record() {
+    fn inspire_author_hit_must_be_the_entry_record() {
         let metadata: super::InspireAuthorMetadata = serde_json::from_str(
             r#"{"authors": [{"full_name": "Stegmann, J."}], "arxiv_eprints": [{"value": "2508.18084"}]}"#,
         )
