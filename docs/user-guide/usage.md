@@ -176,6 +176,33 @@ are never modified.
 The ignore file must exist when `--ignore-file` is passed. A misspelled ignore
 path is reported as a missing input file.
 
+## Journal Names
+
+Providers abbreviate journal names: InspireHEP writes `Phys. Rev. D` and NASA
+ADS writes AAS macros such as `\prd`. Some venues, including JOSS, require full
+names. Add `--full-journal-names` to write them in full:
+
+```shell
+bibsync --fix paper.md --full-journal-names
+```
+
+This applies to entries resolved from a provider in that run (new entries,
+refreshed preprints, and everything with `--update-all` or
+`--force-regenerate`); entries already in the bibliography are not rewritten,
+so run once with `--force-regenerate` to convert an existing file. The full
+names come from a table maintained in `bibsync`, which also lists journals
+whose short title is already their full name (`Nature`, `SoftwareX`). Any other
+journal is left unchanged and reported, never guessed, so you can check it by
+hand:
+
+```text
+bibsync: journal "Phys. Rev. Z" in 2001.00001 is not in bibsync's journal table; left unchanged, check that it is the full name
+```
+
+From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
+`unexpanded_journals` lists the journal names that were left unchanged because
+they are not in the table.
+
 ## Updating A BibTeX File
 
 Passing a single `.bib` file uses the existing keys in that bibliography as the

@@ -28,6 +28,7 @@ def test_sync_files_reports_existing_complete_bib_entry(tmp_path: Path) -> None:
         "found_in_other": [],
         "unresolved": [],
         "unresolved_details": [],
+        "unexpanded_journals": [],
         "changed": False,
         "check_mode": True,
     }
@@ -45,6 +46,20 @@ def test_sync_files_accepts_underscore_update_mode_alias(tmp_path: Path) -> None
     )
 
     assert report["existing"] == ["smith2024"]
+    assert report["changed"] is False
+
+
+def test_sync_files_accepts_full_journal_names(tmp_path: Path) -> None:
+    bibliography = tmp_path / "references.bib"
+    bibliography.write_text(COMPLETE_ENTRY, encoding="utf-8")
+
+    report = bibsync.sync_files(
+        [str(bibliography)],
+        provider="inspire",
+        full_journal_names=True,
+    )
+
+    assert report["unexpanded_journals"] == []
     assert report["changed"] is False
 
 

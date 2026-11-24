@@ -325,3 +325,25 @@ fn documented_hooks_check_citations_when_either_file_changes() {
         }
     }
 }
+
+#[test]
+fn cli_accepts_full_journal_names() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(
+        &bib,
+        "@article{smith2024,\n  author = {Smith, Jane},\n  journal = {Phys. Rev. Z},\n  eprint = {2001.00001},\n  archivePrefix = {arXiv},\n  year = {2024}\n}\n",
+    )
+    .expect("write bib");
+    // The entry is not re-resolved (it has a journal), so no network is used;
+    // this checks that the flag is accepted and the run stays clean.
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--full-journal-names")
+        .arg(&bib)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bibliography is up to date"));
+}

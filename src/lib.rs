@@ -19,6 +19,7 @@ use thiserror::Error;
 
 pub mod cli;
 mod fields;
+mod journals;
 
 #[cfg(feature = "python")]
 mod python;
@@ -150,6 +151,10 @@ pub struct SyncOptions {
     pub cache_dir: Option<PathBuf>,
     /// Path to a file listing citekeys to skip, one per line.
     pub ignore_file: Option<PathBuf>,
+    /// Write journal names in full (`Physical Review D`) instead of the
+    /// provider's abbreviation (`Phys. Rev. D`, `\\prd`) in entries resolved
+    /// from a provider.
+    pub full_journal_names: bool,
 }
 
 impl Default for SyncOptions {
@@ -167,6 +172,7 @@ impl Default for SyncOptions {
             refresh_cache: false,
             cache_dir: None,
             ignore_file: None,
+            full_journal_names: false,
         }
     }
 }
@@ -188,6 +194,10 @@ pub struct SyncReport {
     pub unresolved: Vec<String>,
     /// Detailed diagnostics for citekeys that could not be resolved.
     pub unresolved_details: Vec<UnresolvedCitation>,
+    /// Journal names that `full_journal_names` could not confirm as full:
+    /// not an abbreviation in bibsync's table and not one of its full names.
+    /// They are written unchanged.
+    pub unexpanded_journals: Vec<UnexpandedJournal>,
     /// Whether the output file content changed.
     pub changed: bool,
     /// Whether changes were only reported because check mode was enabled.
@@ -201,6 +211,16 @@ pub struct UnresolvedCitation {
     pub key: String,
     /// Reason the key could not be resolved automatically.
     pub reason: UnresolvedReason,
+}
+
+/// A journal name that `full_journal_names` could not confirm: not an
+/// abbreviation in bibsync's table and not one of its full names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UnexpandedJournal {
+    /// Citekey of the entry.
+    pub key: String,
+    /// The journal name as written in the entry.
+    pub journal: String,
 }
 
 /// Reason a citekey could not be resolved.
@@ -455,6 +475,14 @@ pub fn sync_files_with_provider(
         })?;
         entry.key.clone_from(key);
         entry.normalize_collaboration();
+        if options.full_journal_names {
+            if let Some(journal) = entry.expand_journal() {
+                report.unexpanded_journals.push(UnexpandedJournal {
+                    key: key.clone(),
+                    journal,
+                });
+            }
+        }
 
         // For preprint refresh: skip the upsert if still a preprint — the
         // entry is only updated when the provider confirms it is now published.
@@ -500,6 +528,9 @@ pub fn sync_files_with_provider(
     report.unresolved.sort();
     report
         .unresolved_details
+        .sort_by(|left, right| left.key.cmp(&right.key));
+    report
+        .unexpanded_journals
         .sort_by(|left, right| left.key.cmp(&right.key));
     Ok(report)
 }
@@ -812,6 +843,38 @@ impl BibEntry {
         } else {
             fields::replace_delimited_text(&self.body, &field, &kept.join(", "))
         };
+    }
+
+    /// Replace an abbreviated `journal` with its full name.
+    ///
+    /// Returns the journal as written when it is neither an abbreviation in
+    /// the table nor one of the table's full names; such a name is left
+    /// unchanged, never guessed, and reported so it can be checked by hand.
+    fn expand_journal(&mut self) -> Option<String> {
+        let field = fields::find_field(&self.body, "journal")?;
+        let raw = &self.body[field.value_span.clone()];
+        // A bare value is a macro (`journal = \\apj`, `journal = prd`). A
+        // concatenation (`"Phys. Rev." # " D"`) cannot be looked up, so it is
+        // reported as written.
+        let bare = !raw.starts_with(['"', '{']) && !raw.contains('#');
+        let Some(journal) = (if bare {
+            Some(raw)
+        } else {
+            field.delimited_text(&self.body)
+        }) else {
+            return Some(raw.to_owned());
+        };
+        if journal.trim().is_empty() {
+            return None;
+        }
+        if let Some(full) = journals::full_name(journal) {
+            self.body = fields::replace_delimited_text(&self.body, &field, full);
+            None
+        } else if bare || !journals::is_known_full_name(journal) {
+            Some(journal.to_owned())
+        } else {
+            None
+        }
     }
 
     /// Returns true if the entry appears to be an unpublished preprint.
@@ -1969,6 +2032,15 @@ mod tests {
 
     /// Sync one cited key whose provider entry is `bibtex`; return the written bibliography.
     fn sync_single_entry(key: &str, bibtex: &str) -> String {
+        sync_single_entry_with(key, bibtex, SyncOptions::default()).0
+    }
+
+    /// Like [`sync_single_entry`], with `options` (output, provider and backup are set here).
+    fn sync_single_entry_with(
+        key: &str,
+        bibtex: &str,
+        options: SyncOptions,
+    ) -> (String, super::SyncReport) {
         let dir = tempdir().expect("tempdir");
         let tex = dir.path().join("main.tex");
         let bib = dir.path().join("refs.bib");
@@ -1977,18 +2049,18 @@ mod tests {
         let provider = FakeProvider {
             entries: BTreeMap::from([(key.to_owned(), bibtex.to_owned())]),
         };
-        sync_files_with_provider(
+        let report = sync_files_with_provider(
             &[tex],
             &SyncOptions {
                 output: Some(bib.clone()),
                 provider: ProviderChoice::Inspire,
                 backup: false,
-                ..SyncOptions::default()
+                ..options
             },
             &provider,
         )
         .expect("sync");
-        std::fs::read_to_string(bib).expect("read bib")
+        (std::fs::read_to_string(bib).expect("read bib"), report)
     }
 
     /// The `collaboration` field as `InspireHEP` returns it for GWTC-4.0 (arXiv:2508.18083).
@@ -2033,6 +2105,208 @@ mod tests {
         assert!(
             written.contains("author = \"A, B.\",\n    year = \"2020\""),
             "{written}"
+        );
+    }
+
+    fn journal_entry(journal: &str) -> String {
+        format!(
+            "@article{{x,\n    author = \"A, B.\",\n    journal = {journal},\n    year = \"2020\"\n}}"
+        )
+    }
+
+    fn with_full_journal_names() -> SyncOptions {
+        SyncOptions {
+            full_journal_names: true,
+            ..SyncOptions::default()
+        }
+    }
+
+    #[test]
+    fn full_journal_names_expand_inspire_abbreviations() {
+        for (abbreviation, full) in [
+            ("Astrophys. J.", "The Astrophysical Journal"),
+            ("Astrophys. J. Lett.", "The Astrophysical Journal Letters"),
+            (
+                "Astrophys. J. Suppl.",
+                "The Astrophysical Journal Supplement Series",
+            ),
+            ("Class. Quant. Grav.", "Classical and Quantum Gravity"),
+            ("JCAP", "Journal of Cosmology and Astroparticle Physics"),
+            ("J. Open Source Softw.", "Journal of Open Source Software"),
+            (
+                "Mon. Not. Roy. Astron. Soc.",
+                "Monthly Notices of the Royal Astronomical Society",
+            ),
+            ("Phys. Rev. D", "Physical Review D"),
+        ] {
+            let (written, report) = sync_single_entry_with(
+                "2001.00001",
+                &journal_entry(&format!("\"{abbreviation}\"")),
+                with_full_journal_names(),
+            );
+            assert!(
+                written.contains(&format!("    journal = \"{full}\",\n")),
+                "{abbreviation}: {written}"
+            );
+            assert_eq!(
+                report.unexpanded_journals,
+                Vec::<super::UnexpandedJournal>::new()
+            );
+        }
+    }
+
+    #[test]
+    fn full_journal_names_expand_ads_macros() {
+        let (written, _) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("{\\apjl}"),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = {The Astrophysical Journal Letters},\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn bare_journal_macros_are_expanded_or_reported() {
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\\apj"),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = {The Astrophysical Journal},\n"),
+            "{written}"
+        );
+        assert_eq!(
+            report.unexpanded_journals,
+            Vec::<super::UnexpandedJournal>::new()
+        );
+
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("prd"),
+            with_full_journal_names(),
+        );
+        assert!(written.contains("    journal = prd,\n"), "{written}");
+        assert_eq!(report.unexpanded_journals[0].journal, "prd");
+    }
+
+    #[test]
+    fn compact_inspire_abbreviation_is_reported() {
+        // InspireHEP's single-record BibTeX writes some titles without spaces.
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"New J.Phys.\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"New J.Phys.\",\n"),
+            "{written}"
+        );
+        assert_eq!(report.unexpanded_journals[0].journal, "New J.Phys.");
+    }
+
+    #[test]
+    fn journals_outside_the_table_are_reported_not_guessed() {
+        for journal in [
+            "eConf",
+            "Bulletin of the Russian Academy of Sciences. Physics",
+            "RNA",
+            "Journal of Unlisted Studies",
+        ] {
+            let (written, report) = sync_single_entry_with(
+                "2001.00001",
+                &journal_entry(&format!("\"{journal}\"")),
+                with_full_journal_names(),
+            );
+            let expected = Some(journal);
+            assert!(
+                written.contains(&format!("    journal = \"{journal}\",\n")),
+                "{written}"
+            );
+            assert_eq!(
+                report
+                    .unexpanded_journals
+                    .first()
+                    .map(|item| item.journal.as_str()),
+                expected,
+                "{journal}"
+            );
+        }
+    }
+
+    #[test]
+    fn concatenated_journal_is_reported_and_blank_journal_is_not() {
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"Phys. Rev.\" # \" D\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"Phys. Rev.\" # \" D\",\n"),
+            "{written}"
+        );
+        assert_eq!(
+            report.unexpanded_journals[0].journal,
+            "\"Phys. Rev.\" # \" D\""
+        );
+
+        for blank in ["\"\"", "{}", "{ }"] {
+            let (_, report) = sync_single_entry_with(
+                "2001.00001",
+                &journal_entry(blank),
+                with_full_journal_names(),
+            );
+            assert_eq!(
+                report.unexpanded_journals,
+                Vec::<super::UnexpandedJournal>::new(),
+                "{blank}"
+            );
+        }
+    }
+
+    #[test]
+    fn journal_names_are_kept_without_the_option() {
+        let written = sync_single_entry("2001.00001", &journal_entry("\"Phys. Rev. D\""));
+        assert!(
+            written.contains("    journal = \"Phys. Rev. D\",\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn unknown_journal_abbreviation_is_kept_and_reported() {
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"Phys. Rev. Z\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"Phys. Rev. Z\",\n"),
+            "{written}"
+        );
+        assert_eq!(
+            report.unexpanded_journals,
+            vec![super::UnexpandedJournal {
+                key: "2001.00001".to_owned(),
+                journal: "Phys. Rev. Z".to_owned(),
+            }]
+        );
+
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"Physical Review D\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"Physical Review D\",\n"),
+            "{written}"
+        );
+        assert_eq!(
+            report.unexpanded_journals,
+            Vec::<super::UnexpandedJournal>::new()
         );
     }
 
