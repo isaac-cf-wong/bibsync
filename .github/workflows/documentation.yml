@@ -29,8 +29,12 @@ jobs:
                   python-version: "3.14.3"
                   enable-cache: "true"
 
+            # zensical does not report a nav entry whose page is missing.
+            - name: Check documentation navigation
+              run: uv run --no-project python scripts/check_docs_nav.py
+
             - name: Build documentation
-              run: uvx zensical build
+              run: uvx zensical build --strict
 
             - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
               with:
