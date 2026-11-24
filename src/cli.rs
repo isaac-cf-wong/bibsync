@@ -51,6 +51,14 @@ struct Cli {
     #[arg(long = "full-journal-names")]
     full_journal_names: bool,
 
+    /// Fail when any entry's journal or booktitle looks abbreviated.
+    ///
+    /// Checks every entry in the bibliography, including ignored and
+    /// hand-written ones. Useful for venues such as JOSS that require full
+    /// venue names.
+    #[arg(long = "check-venue-names")]
+    check_venue_names: bool,
+
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
     merge_other: bool,
@@ -155,6 +163,7 @@ where
         cache_dir: cli.cache_dir,
         ignore_file: cli.ignore_file,
         full_journal_names: cli.full_journal_names,
+        check_venue_names: cli.check_venue_names,
     };
 
     match sync_files(&cli.files, &options) {
@@ -195,7 +204,13 @@ where
             } else {
                 println!("bibliography is up to date");
             }
-            i32::from(!report.unresolved.is_empty())
+            for venue in &report.abbreviated_venues {
+                eprintln!(
+                    "bibsync: {} in {} looks abbreviated: {:?}; write the full venue name",
+                    venue.field, venue.key, venue.value
+                );
+            }
+            i32::from(!report.unresolved.is_empty() || !report.abbreviated_venues.is_empty())
         }
         Err(error) => {
             eprintln!("error: {error}");

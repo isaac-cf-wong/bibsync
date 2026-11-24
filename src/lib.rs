@@ -155,6 +155,9 @@ pub struct SyncOptions {
     /// provider's abbreviation (`Phys. Rev. D`, `\\prd`) in entries resolved
     /// from a provider.
     pub full_journal_names: bool,
+    /// Report every entry in the bibliography (including ignored and
+    /// existing ones) whose `journal` or `booktitle` looks abbreviated.
+    pub check_venue_names: bool,
 }
 
 impl Default for SyncOptions {
@@ -173,6 +176,7 @@ impl Default for SyncOptions {
             cache_dir: None,
             ignore_file: None,
             full_journal_names: false,
+            check_venue_names: false,
         }
     }
 }
@@ -197,6 +201,8 @@ pub struct SyncReport {
     /// Abbreviated journal names that `full_journal_names` could not expand
     /// because no full name is known for them. They are written unchanged.
     pub unexpanded_journals: Vec<UnexpandedJournal>,
+    /// Venue names that look abbreviated, found by `check_venue_names`.
+    pub abbreviated_venues: Vec<AbbreviatedVenue>,
     /// Whether the output file content changed.
     pub changed: bool,
     /// Whether changes were only reported because check mode was enabled.
@@ -210,6 +216,17 @@ pub struct UnresolvedCitation {
     pub key: String,
     /// Reason the key could not be resolved automatically.
     pub reason: UnresolvedReason,
+}
+
+/// A `journal` or `booktitle` value that looks abbreviated.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AbbreviatedVenue {
+    /// Citekey of the entry.
+    pub key: String,
+    /// Field name, lower-cased (`journal` or `booktitle`).
+    pub field: String,
+    /// The value as written in the entry.
+    pub value: String,
 }
 
 /// A journal abbreviation with no known full name.
@@ -495,6 +512,10 @@ pub fn sync_files_with_provider(
         } else {
             report.added.push(key.clone());
         }
+    }
+
+    if options.check_venue_names {
+        report.abbreviated_venues = bibliography.abbreviated_venues();
     }
 
     let new_content = bibliography.to_string();
@@ -923,6 +944,30 @@ impl Bibliography {
         for entry in other.entries.into_values() {
             self.upsert(entry);
         }
+    }
+
+    /// Every `journal` or `booktitle` value in the bibliography that looks
+    /// abbreviated, in citekey order.
+    fn abbreviated_venues(&self) -> Vec<AbbreviatedVenue> {
+        let mut found = Vec::new();
+        for entry in self.entries.values() {
+            for field in fields::parse_fields(&entry.body).unwrap_or_default() {
+                if field.name != "journal" && field.name != "booktitle" {
+                    continue;
+                }
+                let value = field
+                    .delimited_text(&entry.body)
+                    .unwrap_or(&entry.body[field.value_span.clone()]);
+                if journals::looks_abbreviated(value) {
+                    found.push(AbbreviatedVenue {
+                        key: entry.key.clone(),
+                        field: field.name.clone(),
+                        value: value.to_owned(),
+                    });
+                }
+            }
+        }
+        found
     }
 
     fn upsert(&mut self, entry: BibEntry) {
@@ -2180,6 +2225,64 @@ mod tests {
             "{written}"
         );
         assert!(report.unexpanded_journals.is_empty());
+    }
+
+    #[test]
+    fn venue_check_reports_abbreviations_in_every_entry() {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        let ignore = dir.path().join(".bibsyncignore");
+        std::fs::write(
+            &tex,
+            "\\cite{curated,existing,full,saint,conf}\n\\bibliography{refs}",
+        )
+        .expect("write tex");
+        std::fs::write(&ignore, "curated\n").expect("write ignore");
+        std::fs::write(
+            &bib,
+            "@misc{curated,\n  journal = {Phys. Rev. D}\n}\n\n\
+             @article{existing,\n  journal = \"JCAP\"\n}\n\n\
+             @article{full,\n  journal = \"Physical Review D\"\n}\n\n\
+             @article{saint,\n  journal = {St. Petersburg Mathematical Journal}\n}\n\n\
+             @inproceedings{conf,\n  booktitle = \"Proc. SPIE\"\n}\n",
+        )
+        .expect("write bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+        let report = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib),
+                provider: ProviderChoice::Inspire,
+                check: true,
+                ignore_file: Some(ignore),
+                check_venue_names: true,
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync");
+        let found = report
+            .abbreviated_venues
+            .iter()
+            .map(|venue| {
+                (
+                    venue.key.as_str(),
+                    venue.field.as_str(),
+                    venue.value.as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found,
+            [
+                ("conf", "booktitle", "Proc. SPIE"),
+                ("curated", "journal", "Phys. Rev. D"),
+                ("existing", "journal", "JCAP"),
+            ]
+        );
     }
 
     #[test]

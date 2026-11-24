@@ -52,7 +52,8 @@ fn pathbufs(paths: Option<Vec<String>>) -> Vec<PathBuf> {
     refresh_cache = false,
     cache_dir = None,
     ignore_file = None,
-    full_journal_names = false
+    full_journal_names = false,
+    check_venue_names = false
 ))]
 fn sync_files_py<'py>(
     py: Python<'py>,
@@ -70,6 +71,7 @@ fn sync_files_py<'py>(
     cache_dir: Option<String>,
     ignore_file: Option<String>,
     full_journal_names: bool,
+    check_venue_names: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
     let options = SyncOptions {
         output: output.map(PathBuf::from),
@@ -85,6 +87,7 @@ fn sync_files_py<'py>(
         cache_dir: cache_dir.map(PathBuf::from),
         ignore_file: ignore_file.map(PathBuf::from),
         full_journal_names,
+        check_venue_names,
     };
     let files = files.into_iter().map(PathBuf::from).collect::<Vec<_>>();
     let report =
@@ -119,6 +122,18 @@ fn sync_files_py<'py>(
         })
         .collect::<PyResult<Vec<_>>>()?;
     dict.set_item("unexpanded_journals", unexpanded_journals)?;
+    let abbreviated_venues = report
+        .abbreviated_venues
+        .into_iter()
+        .map(|venue| {
+            let item = PyDict::new(py);
+            item.set_item("key", venue.key)?;
+            item.set_item("field", venue.field)?;
+            item.set_item("value", venue.value)?;
+            Ok(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+    dict.set_item("abbreviated_venues", abbreviated_venues)?;
     dict.set_item("changed", report.changed)?;
     dict.set_item("check_mode", report.check_mode)?;
     Ok(dict)

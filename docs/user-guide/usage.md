@@ -198,6 +198,21 @@ guessed:
 bibsync: no full name known for journal "Phys. Rev. Z" in 2001.00001; left unchanged
 ```
 
+To catch abbreviations that `--full-journal-names` cannot fix (journals missing
+from the table, and hand-written or ignored entries), add `--check-venue-names`.
+It checks the `journal` and `booktitle` of every entry in the bibliography,
+including entries listed in the ignore file, names each one that looks
+abbreviated, and makes the run fail:
+
+```text
+bibsync: journal in smith2024 looks abbreviated: "Phys. Rev. D"; write the full venue name
+```
+
+A name counts as abbreviated when it is an unexpanded macro (`\prd`), contains
+a word cut short with a period (`Phys.`, except `St.`, `Ste.`, `Mt.`, `Ft.`), or
+is a single short all-capitals word (`JCAP`). For a JOSS paper's pre-commit
+hook, use both options together.
+
 From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
 `unexpanded_journals` lists the abbreviations that were left unchanged.
 

@@ -29,6 +29,7 @@ def test_sync_files_reports_existing_complete_bib_entry(tmp_path: Path) -> None:
         "unresolved": [],
         "unresolved_details": [],
         "unexpanded_journals": [],
+        "abbreviated_venues": [],
         "changed": False,
         "check_mode": True,
     }
@@ -61,6 +62,24 @@ def test_sync_files_accepts_full_journal_names(tmp_path: Path) -> None:
 
     assert report["unexpanded_journals"] == []
     assert report["changed"] is False
+
+
+def test_sync_files_reports_abbreviated_venues(tmp_path: Path) -> None:
+    bibliography = tmp_path / "references.bib"
+    bibliography.write_text(
+        COMPLETE_ENTRY.replace("Journal of Local Fixtures", "Phys. Rev. D"),
+        encoding="utf-8",
+    )
+
+    report = bibsync.sync_files(
+        [str(bibliography)],
+        provider="inspire",
+        check_venue_names=True,
+    )
+
+    assert report["abbreviated_venues"] == [
+        {"key": "smith2024", "field": "journal", "value": "Phys. Rev. D"}
+    ]
 
 
 def test_sync_files_rejects_unknown_provider(tmp_path: Path) -> None:
