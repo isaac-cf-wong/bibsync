@@ -83,6 +83,26 @@ jobs:
             - name: Build docs
               run: cargo doc --no-deps --all-features
 
+    docs:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+              with:
+                  python-version: "3.14.3"
+                  enable-cache: "true"
+
+            # zensical does not report a nav entry whose page is missing.
+            - name: Check documentation navigation
+              run: uv run --no-project python scripts/check_docs_nav.py
+
+            # Same command as the GitHub Pages deploy (documentation.yml), so a
+            # change that breaks the site fails here instead of after merge.
+            - name: Build documentation site
+              run: uvx zensical build --strict
+
     audit:
         runs-on: ubuntu-latest
         steps:
