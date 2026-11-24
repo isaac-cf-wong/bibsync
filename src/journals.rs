@@ -111,6 +111,12 @@ const JOURNALS: &[(&str, &str)] = &[
     ("Rev. Sci. Instrum.", "Review of Scientific Instruments"),
     ("SciPost Phys.", "SciPost Physics"),
     ("Space Sci. Rev.", "Space Science Reviews"),
+    // Journals whose InspireHEP short title is already the full name.
+    ("Galaxies", "Galaxies"),
+    ("Nature", "Nature"),
+    ("Science", "Science"),
+    ("SoftwareX", "SoftwareX"),
+    ("Universe", "Universe"),
     // NASA ADS (AAS journal macros).
     ("\\aap", "Astronomy \\& Astrophysics"),
     ("\\aj", "The Astronomical Journal"),
@@ -152,9 +158,6 @@ const JOURNALS: &[(&str, &str)] = &[
     ("\\ssr", "Space Science Reviews"),
 ];
 
-/// Words that end in a period inside full journal names.
-const FULL_NAME_ABBREVIATIONS: &[&str] = &["St.", "Ste.", "Mt.", "Ft."];
-
 /// The full name for a journal abbreviation, if the table knows it.
 pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
     let key = lookup_key(journal);
@@ -164,32 +167,10 @@ pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
         .map(|(_, full)| *full)
 }
 
-/// Whether a journal name looks abbreviated: an unexpanded macro (`\\prd`), a
-/// word cut short with a period (`Phys.`, or `J.Phys.` written without
-/// spaces), or a short all-capitals acronym standing alone (`JCAP`).
-pub(crate) fn looks_abbreviated(journal: &str) -> bool {
-    let name = journal.trim().trim_matches(['{', '}']).trim();
-    if name.starts_with('\\') {
-        return true;
-    }
-    let words = name.split_whitespace().collect::<Vec<_>>();
-    let cut_word = words.iter().any(|word| is_cut_word(word));
-    let acronym = words.len() == 1
-        && (2..=6).contains(&name.chars().count())
-        && name.chars().filter(char::is_ascii_uppercase).count() >= 2;
-    cut_word || acronym
-}
-
-/// A word containing a period whose period-separated pieces are short runs of
-/// letters (`Phys.`, `J.Phys.`, `Rev.Mod.Phys.`). Longer pieces such as
-/// `Astrophysics.` end a phrase rather than cut a word short.
-fn is_cut_word(word: &str) -> bool {
-    const MAX_CUT_LETTERS: usize = 9;
-    word.contains('.')
-        && !FULL_NAME_ABBREVIATIONS.contains(&word)
-        && word.split('.').all(|piece| {
-            piece.chars().all(char::is_alphabetic) && piece.chars().count() <= MAX_CUT_LETTERS
-        })
+/// Whether `journal` is written as one of the table's full names.
+pub(crate) fn is_known_full_name(journal: &str) -> bool {
+    let key = lookup_key(journal);
+    JOURNALS.iter().any(|(_, full)| lookup_key(full) == key)
 }
 
 fn lookup_key(journal: &str) -> String {
@@ -202,8 +183,20 @@ fn lookup_key(journal: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{JOURNALS, full_name, looks_abbreviated, lookup_key};
+    use super::{JOURNALS, full_name, lookup_key};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn knows_full_names() {
+        use super::is_known_full_name;
+        assert!(is_known_full_name("Physical Review D"));
+        assert!(is_known_full_name("{Nature}"));
+        assert!(!is_known_full_name("eConf"));
+        assert!(!is_known_full_name("Phys. Rev. D"));
+        assert!(!is_known_full_name(
+            "Bulletin of the Russian Academy of Sciences. Physics"
+        ));
+    }
 
     #[test]
     fn expands_inspire_and_ads_spellings() {
@@ -225,34 +218,6 @@ mod tests {
             if let Some(previous) = seen.insert(lookup_key(abbreviation), *full) {
                 panic!("{abbreviation} maps to both {previous} and {full}");
             }
-            assert!(!looks_abbreviated(full), "{full} looks abbreviated");
-        }
-    }
-
-    #[test]
-    fn detects_abbreviations() {
-        for name in [
-            "Phys. Rev. D",
-            "Nature Astron.",
-            "JCAP",
-            "{\\mnras}",
-            "ApJL",
-            "J.Phys.",
-            "New J.Phys.",
-            "AIP Conf.Proc.",
-            "Phys. Rev. Res.",
-        ] {
-            assert!(looks_abbreviated(name), "{name}");
-        }
-        for name in [
-            "Physical Review D",
-            "Nature",
-            "SoftwareX",
-            "St. Petersburg Mathematical Journal",
-            "Astronomy and Astrophysics. Supplement Series",
-            "Physical Review Research",
-        ] {
-            assert!(!looks_abbreviated(name), "{name}");
         }
     }
 }

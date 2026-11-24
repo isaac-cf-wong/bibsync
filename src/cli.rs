@@ -180,7 +180,7 @@ where
             }
             for unexpanded in &report.unexpanded_journals {
                 eprintln!(
-                    "bibsync: no full name known for journal {:?} in {}; left unchanged",
+                    "bibsync: journal {:?} in {} is not in bibsync's journal table; left unchanged, check that it is the full name",
                     unexpanded.journal, unexpanded.key
                 );
             }
