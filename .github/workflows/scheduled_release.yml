@@ -62,7 +62,7 @@ jobs:
         steps:
             - name: Create release GitHub App token
               id: release_app_token
-              uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+              uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
               with:
                   app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
                   private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -80,7 +80,7 @@ jobs:
                   GH_TOKEN: ${{ steps.release_app_token.outputs.token }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+              uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
               with:
                   toolchain: stable
 
@@ -261,7 +261,7 @@ jobs:
                   ref: ${{ needs.create_tag.outputs.new_tag }}
 
             - name: Install Rust
-              uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+              uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
               with:
                   toolchain: stable
                   targets: ${{ matrix.target }}
