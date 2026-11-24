@@ -176,6 +176,27 @@ are never modified.
 The ignore file must exist when `--ignore-file` is passed. A misspelled ignore
 path is reported as a missing input file.
 
+## Author Lists
+
+InspireHEP and NASA ADS truncate long author lists in their BibTeX
+(`Abac, A. G. and others`, `... and et al.`). Citation styles that treat
+`others` as a name, such as the one JOSS uses, then print "Abac & others"
+instead of "Abac et al.". Add `--full-author-lists` to fetch the complete list
+from the provider:
+
+```shell
+bibsync --fix paper.md --full-author-lists
+```
+
+Papers with more than 100 authors that name a collaboration are credited to
+the collaboration(s) instead, as one brace-protected corporate author, for
+example `{LIGO Scientific Collaboration, VIRGO Collaboration and KAGRA
+Collaboration}`. The option is off by default, costs one extra provider request
+per truncated entry, and, like `--full-journal-names`, applies only to entries
+resolved from a provider in that run (use `--force-regenerate` once to convert
+an existing file). An entry whose provider has no full list is left truncated
+and reported.
+
 ## Journal Names
 
 Providers abbreviate journal names: InspireHEP writes `Phys. Rev. D` and NASA
@@ -200,6 +221,8 @@ bibsync: no full name known for journal "Phys. Rev. Z" in 2001.00001; left uncha
 
 From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
 `unexpanded_journals` lists the abbreviations that were left unchanged.
+`full_author_lists=True` does the same for author lists, and the report's
+`truncated_author_lists` names the entries left truncated.
 
 ## Updating A BibTeX File
 

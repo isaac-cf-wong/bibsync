@@ -155,6 +155,10 @@ pub struct SyncOptions {
     /// provider's abbreviation (`Phys. Rev. D`, `\\prd`) in entries resolved
     /// from a provider.
     pub full_journal_names: bool,
+    /// Replace author lists that the provider truncated to `... and others`
+    /// with the complete list (or, for large collaboration papers, the
+    /// collaborations) in entries resolved from a provider.
+    pub full_author_lists: bool,
 }
 
 impl Default for SyncOptions {
@@ -173,6 +177,7 @@ impl Default for SyncOptions {
             cache_dir: None,
             ignore_file: None,
             full_journal_names: false,
+            full_author_lists: false,
         }
     }
 }
@@ -197,6 +202,9 @@ pub struct SyncReport {
     /// Abbreviated journal names that `full_journal_names` could not expand
     /// because no full name is known for them. They are written unchanged.
     pub unexpanded_journals: Vec<UnexpandedJournal>,
+    /// Citekeys whose author list is still truncated (`... and others`)
+    /// because `full_author_lists` was set but the provider gave no full list.
+    pub truncated_author_lists: Vec<String>,
     /// Whether the output file content changed.
     pub changed: bool,
     /// Whether changes were only reported because check mode was enabled.
@@ -210,6 +218,20 @@ pub struct UnresolvedCitation {
     pub key: String,
     /// Reason the key could not be resolved automatically.
     pub reason: UnresolvedReason,
+}
+
+/// Number of authors above which a paper that names a collaboration is
+/// credited to the collaboration(s) instead of listing every author.
+pub const COLLABORATION_AUTHOR_THRESHOLD: usize = 100;
+
+/// The complete author information a provider holds for one record.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct AuthorList {
+    /// Authors in order, each written `Family, Given`.
+    pub authors: Vec<String>,
+    /// Collaborations the record names, as the provider writes them
+    /// (for example `LIGO Scientific`).
+    pub collaborations: Vec<String>,
 }
 
 /// A journal abbreviation with no known full name.
@@ -281,6 +303,19 @@ pub trait BibliographyProvider {
     ///
     /// Returns an error when the provider request or response handling fails.
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>>;
+
+    /// Return the complete author list for an entry this provider resolved.
+    ///
+    /// Used when the entry's BibTeX author list is truncated. The default
+    /// implementation returns `Ok(None)`: the provider cannot supply one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the provider request or response handling fails.
+    fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
+        let _ = entry;
+        Ok(None)
+    }
 
     /// Resolve several identifier-like citekeys, bypassing any cache layer.
     ///
@@ -473,6 +508,12 @@ pub fn sync_files_with_provider(
         })?;
         entry.key.clone_from(key);
         entry.normalize_collaboration();
+        if options.full_author_lists && entry.has_truncated_authors() {
+            match provider.full_authors(resolved)? {
+                Some(list) if !list.authors.is_empty() => entry.set_authors(&list),
+                _ => report.truncated_author_lists.push(key.clone()),
+            }
+        }
         if options.full_journal_names {
             if let Some(journal) = entry.expand_journal() {
                 report.unexpanded_journals.push(UnexpandedJournal {
@@ -530,6 +571,7 @@ pub fn sync_files_with_provider(
     report
         .unexpanded_journals
         .sort_by(|left, right| left.key.cmp(&right.key));
+    report.truncated_author_lists.sort();
     Ok(report)
 }
 
@@ -820,13 +862,7 @@ impl BibEntry {
             return;
         };
         let names = fields::split_top_level(text, ',');
-        let mut kept: Vec<&str> = Vec::new();
-        for name in &names {
-            let name = name.trim();
-            if !name.is_empty() && !kept.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
-                kept.push(name);
-            }
-        }
+        let kept = distinct_names(names.iter().copied());
         if kept.len() == names.len() {
             return;
         }
@@ -841,6 +877,51 @@ impl BibEntry {
         } else {
             fields::replace_delimited_text(&self.body, &field, &kept.join(", "))
         };
+    }
+
+    /// Whether the `author` field ends in `and others` (`InspireHEP`) or
+    /// `and et al.` (NASA ADS), i.e. the provider truncated the list.
+    fn has_truncated_authors(&self) -> bool {
+        let Some(field) = fields::find_field(&self.body, "author") else {
+            return false;
+        };
+        let Some(text) = field.delimited_text(&self.body) else {
+            return false;
+        };
+        let last = text.rsplit(" and ").next().unwrap_or_default();
+        let last = last.trim().trim_matches(['{', '}']).trim().to_lowercase();
+        text.contains(" and ") && (last == "others" || last == "et al." || last == "et al")
+    }
+
+    /// Write `list` as the `author` field: the collaboration(s) for a paper
+    /// with more than [`COLLABORATION_AUTHOR_THRESHOLD`] authors that names
+    /// one, otherwise every author.
+    fn set_authors(&mut self, list: &AuthorList) {
+        let Some(field) = fields::find_field(&self.body, "author") else {
+            return;
+        };
+        // InspireHEP occasionally stores a stray separator (`Virgo,`).
+        let collaborations = distinct_names(
+            list.collaborations
+                .iter()
+                .map(|name| name.trim().trim_end_matches(',')),
+        );
+        let author =
+            if list.authors.len() > COLLABORATION_AUTHOR_THRESHOLD && !collaborations.is_empty() {
+                let names = collaborations
+                    .iter()
+                    .map(|name| collaboration_name(name))
+                    .collect::<Vec<_>>();
+                // One brace-protected corporate name, as citation styles expect.
+                format!("{{{}}}", join_with_and(&names))
+            } else {
+                list.authors
+                    .iter()
+                    .map(|name| spaced_initials(name.trim()))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            };
+        self.body = fields::replace_delimited_text(&self.body, &field, &author);
     }
 
     /// Replace an abbreviated `journal` with its full name.
@@ -870,6 +951,59 @@ impl BibEntry {
         (body_lower.contains("archiveprefix") || body_lower.contains("eprinttype"))
             && !body_lower.contains("journal")
     }
+}
+
+/// Trimmed, non-empty names with case-insensitive repeats removed (first
+/// spelling kept).
+fn distinct_names<'a>(names: impl Iterator<Item = &'a str>) -> Vec<&'a str> {
+    let mut kept: Vec<&str> = Vec::new();
+    for name in names {
+        let name = name.trim();
+        if !name.is_empty() && !kept.iter().any(|seen| seen.eq_ignore_ascii_case(name)) {
+            kept.push(name);
+        }
+    }
+    kept
+}
+
+/// `LIGO Scientific` -> `LIGO Scientific Collaboration`; names that already
+/// say what they are (`... Collaboration`, `... Consortium`) are kept.
+fn collaboration_name(name: &str) -> String {
+    let lower = name.to_lowercase();
+    if ["collaboration", "consortium", "team", "group"]
+        .iter()
+        .any(|suffix| lower.ends_with(suffix))
+    {
+        name.to_owned()
+    } else {
+        format!("{name} Collaboration")
+    }
+}
+
+/// `A, B and C`.
+fn join_with_and(names: &[String]) -> String {
+    match names.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// `Abac, A.G.` -> `Abac, A. G.`, matching how `InspireHEP` BibTeX spaces
+/// initials. Only the given names (after the first comma) are touched.
+fn spaced_initials(name: &str) -> String {
+    let Some((family, given)) = name.split_once(',') else {
+        return name.to_owned();
+    };
+    let mut spaced = String::with_capacity(given.len() + 4);
+    let mut chars = given.chars().peekable();
+    while let Some(ch) = chars.next() {
+        spaced.push(ch);
+        if ch == '.' && chars.peek().is_some_and(|next| next.is_uppercase()) {
+            spaced.push(' ');
+        }
+    }
+    format!("{family},{spaced}")
 }
 
 #[derive(Debug, Default)]
@@ -1171,6 +1305,15 @@ impl BibliographyProvider for ProviderChain {
         Ok(None)
     }
 
+    fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
+        for provider in &self.providers {
+            if provider.name() == entry.provider {
+                return provider.full_authors(entry);
+            }
+        }
+        Ok(None)
+    }
+
     fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
         let mut resolved = BTreeMap::new();
         let mut remaining = keys.to_vec();
@@ -1254,6 +1397,10 @@ impl BibliographyProvider for CachedProvider {
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>> {
         let resolved = self.resolve_many(&[key.to_owned()])?;
         Ok(resolved.into_values().next())
+    }
+
+    fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
+        self.inner.full_authors(entry)
     }
 
     fn resolve_many(&self, keys: &[String]) -> Result<BTreeMap<String, ResolvedEntry>> {
@@ -1567,6 +1714,31 @@ impl BibliographyProvider for AdsProvider {
         "NASA ADS"
     }
 
+    fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
+        let bibcode = &entry.canonical_id;
+        let query = format!("bibcode:\"{bibcode}\"");
+        let response = self
+            .client
+            .get("https://api.adsabs.harvard.edu/v1/search/query")
+            .headers(self.headers()?)
+            .query(&[("q", query.as_str()), ("fl", "author"), ("rows", "1")])
+            .send();
+        let response = provider_request(self.name(), bibcode.as_str(), response)?;
+        let response =
+            provider_request(self.name(), bibcode.as_str(), response.error_for_status())?;
+        let response: AdsAuthorResponse =
+            provider_request(self.name(), bibcode.as_str(), response.json())?;
+        Ok(response
+            .response
+            .docs
+            .into_iter()
+            .next()
+            .map(|doc| AuthorList {
+                authors: doc.author,
+                collaborations: Vec::new(),
+            }))
+    }
+
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>> {
         let identifier = if is_arxiv_id(key) {
             format!("arXiv:{}", normalize_arxiv_id(key))
@@ -1640,6 +1812,22 @@ struct AdsSearchDoc {
 }
 
 #[derive(Debug, Deserialize)]
+struct AdsAuthorResponse {
+    response: AdsAuthorDocs,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdsAuthorDocs {
+    docs: Vec<AdsAuthorDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdsAuthorDoc {
+    #[serde(default)]
+    author: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
 struct AdsExportResponse {
     export: String,
 }
@@ -1664,6 +1852,48 @@ impl InspireProvider {
 impl BibliographyProvider for InspireProvider {
     fn name(&self) -> &'static str {
         "InspireHEP"
+    }
+
+    fn full_authors(&self, entry: &ResolvedEntry) -> Result<Option<AuthorList>> {
+        const FIELDS: &str = "authors.full_name,collaborations";
+        let id = entry.canonical_id.as_str();
+        // Batch resolution records the INSPIRE record number; single-key
+        // resolution records the search query (`arxiv:...`, `doi:...`).
+        let metadata = if !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()) {
+            let response = self
+                .client
+                .get(format!("https://inspirehep.net/api/literature/{id}"))
+                .header(USER_AGENT, "bibsync/0.1")
+                .query(&[("fields", FIELDS)])
+                .send();
+            let response = provider_request(self.name(), id, response)?;
+            let response = provider_request(self.name(), id, response.error_for_status())?;
+            let record: InspireAuthorRecord = provider_request(self.name(), id, response.json())?;
+            Some(record.metadata)
+        } else {
+            let response = self
+                .client
+                .get("https://inspirehep.net/api/literature")
+                .header(USER_AGENT, "bibsync/0.1")
+                .query(&[("q", id), ("size", "1"), ("fields", FIELDS)])
+                .send();
+            let response = provider_request(self.name(), id, response)?;
+            let response = provider_request(self.name(), id, response.error_for_status())?;
+            let search: InspireAuthorSearch = provider_request(self.name(), id, response.json())?;
+            search.hits.hits.into_iter().next().map(|hit| hit.metadata)
+        };
+        Ok(metadata.map(|metadata| AuthorList {
+            authors: metadata
+                .authors
+                .into_iter()
+                .map(|author| author.full_name)
+                .collect(),
+            collaborations: metadata
+                .collaborations
+                .into_iter()
+                .map(|collaboration| collaboration.value)
+                .collect(),
+        }))
     }
 
     fn resolve(&self, key: &str) -> Result<Option<ResolvedEntry>> {
@@ -1778,6 +2008,34 @@ impl BibliographyProvider for InspireProvider {
         }
         Ok(resolved)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireAuthorRecord {
+    metadata: InspireAuthorMetadata,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireAuthorSearch {
+    hits: InspireAuthorHits,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireAuthorHits {
+    hits: Vec<InspireAuthorRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireAuthorMetadata {
+    #[serde(default)]
+    authors: Vec<InspireAuthor>,
+    #[serde(default)]
+    collaborations: Vec<InspireValue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InspireAuthor {
+    full_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2224,6 +2482,186 @@ mod tests {
         assert!(written.contains("collaboration = \"\""), "{written}");
         // The written file must parse on the next run.
         sync_files_with_provider(&[tex], &options, &provider).expect("second sync");
+    }
+
+    /// A provider whose entries come with a full author list.
+    struct AuthorsProvider {
+        bibtex: String,
+        list: Option<super::AuthorList>,
+        calls: Rc<Cell<usize>>,
+    }
+
+    impl BibliographyProvider for AuthorsProvider {
+        fn name(&self) -> &'static str {
+            "InspireHEP"
+        }
+
+        fn resolve(&self, key: &str) -> super::Result<Option<ResolvedEntry>> {
+            Ok(Some(ResolvedEntry {
+                canonical_id: format!("record-{key}"),
+                bibtex: self.bibtex.clone(),
+                provider: self.name(),
+            }))
+        }
+
+        fn full_authors(&self, entry: &ResolvedEntry) -> super::Result<Option<super::AuthorList>> {
+            assert_eq!(entry.canonical_id, "record-2001.00001");
+            self.calls.set(self.calls.get() + 1);
+            Ok(self.list.clone())
+        }
+    }
+
+    /// Sync `bibtex` through an [`AuthorsProvider`]; return the bib, report and call count.
+    fn sync_with_authors(
+        bibtex: &str,
+        list: Option<super::AuthorList>,
+        full_author_lists: bool,
+    ) -> (String, super::SyncReport, usize) {
+        let dir = tempdir().expect("tempdir");
+        let tex = dir.path().join("main.tex");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&tex, "\\cite{2001.00001}\n\\bibliography{refs}").expect("write tex");
+        let calls = Rc::new(Cell::new(0));
+        let provider = AuthorsProvider {
+            bibtex: bibtex.to_owned(),
+            list,
+            calls: Rc::clone(&calls),
+        };
+        let report = sync_files_with_provider(
+            &[tex],
+            &SyncOptions {
+                output: Some(bib.clone()),
+                provider: ProviderChoice::Inspire,
+                backup: false,
+                full_author_lists,
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync");
+        (
+            std::fs::read_to_string(bib).expect("read bib"),
+            report,
+            calls.get(),
+        )
+    }
+
+    fn truncated_entry(author: &str) -> String {
+        format!(
+            "@article{{x,\n    author = \"{author}\",\n    collaboration = \"LIGO Scientific, VIRGO, Virgo,, KAGRA\",\n    title = \"{{T}}\",\n    year = \"2026\"\n}}"
+        )
+    }
+
+    fn authors(count: usize) -> Vec<String> {
+        (0..count)
+            .map(|index| format!("Author{index}, A.B."))
+            .collect()
+    }
+
+    #[test]
+    fn full_author_lists_replace_and_others() {
+        let list = super::AuthorList {
+            authors: authors(21),
+            collaborations: Vec::new(),
+        };
+        let (written, report, calls) = sync_with_authors(
+            &truncated_entry("Author0, A. B. and others"),
+            Some(list),
+            true,
+        );
+        let expected = (0..21)
+            .map(|index| format!("Author{index}, A. B."))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        assert!(
+            written.contains(&format!("  author = \"{expected}\",\n")),
+            "{written}"
+        );
+        assert!(!written.contains("others"), "{written}");
+        assert_eq!(calls, 1);
+        assert!(report.truncated_author_lists.is_empty());
+    }
+
+    #[test]
+    fn large_collaboration_papers_are_credited_to_the_collaborations() {
+        let list = super::AuthorList {
+            authors: authors(super::COLLABORATION_AUTHOR_THRESHOLD + 1),
+            collaborations: ["LIGO Scientific", "VIRGO", "Virgo,", "KAGRA"]
+                .map(str::to_owned)
+                .to_vec(),
+        };
+        let (written, _, _) =
+            sync_with_authors(&truncated_entry("Abac, A. G. and others"), Some(list), true);
+        assert!(
+            written.contains("  author = \"{LIGO Scientific Collaboration, VIRGO Collaboration and KAGRA Collaboration}\",\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn collaboration_papers_at_the_threshold_list_every_author() {
+        let list = super::AuthorList {
+            authors: authors(super::COLLABORATION_AUTHOR_THRESHOLD),
+            collaborations: vec!["ET".to_owned()],
+        };
+        let (written, _, _) = sync_with_authors(
+            &truncated_entry("Author0, A. B. and others"),
+            Some(list),
+            true,
+        );
+        assert!(written.contains("Author99, A. B.\",\n"), "{written}");
+        assert!(!written.contains("ET Collaboration"), "{written}");
+    }
+
+    #[test]
+    fn ads_et_al_is_treated_as_truncated() {
+        let list = super::AuthorList {
+            authors: vec!["{Abbott}, B.~P.".to_owned(), "{Abbott}, R.".to_owned()],
+            collaborations: Vec::new(),
+        };
+        let (written, _, calls) = sync_with_authors(
+            &truncated_entry("{Abbott}, B.~P. and et al."),
+            Some(list),
+            true,
+        );
+        assert_eq!(calls, 1);
+        assert!(
+            written.contains("author = \"{Abbott}, B.~P. and {Abbott}, R.\""),
+            "{written}"
+        );
+    }
+
+    #[test]
+    fn author_lists_are_kept_without_the_option_or_a_full_list() {
+        let entry = truncated_entry("Author0, A. B. and others");
+        let list = super::AuthorList {
+            authors: authors(21),
+            collaborations: Vec::new(),
+        };
+        let (written, _, calls) = sync_with_authors(&entry, Some(list), false);
+        assert!(
+            written.contains("author = \"Author0, A. B. and others\""),
+            "{written}"
+        );
+        assert_eq!(calls, 0);
+
+        let (written, report, _) = sync_with_authors(&entry, None, true);
+        assert!(
+            written.contains("author = \"Author0, A. B. and others\""),
+            "{written}"
+        );
+        assert_eq!(report.truncated_author_lists, vec!["2001.00001"]);
+    }
+
+    #[test]
+    fn complete_author_lists_are_not_looked_up() {
+        let (written, _, calls) =
+            sync_with_authors(&truncated_entry("Smith, J. and Others, K."), None, true);
+        assert_eq!(calls, 0);
+        assert!(
+            written.contains("author = \"Smith, J. and Others, K.\""),
+            "{written}"
+        );
     }
 
     #[test]

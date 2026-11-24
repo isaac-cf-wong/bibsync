@@ -52,7 +52,8 @@ fn pathbufs(paths: Option<Vec<String>>) -> Vec<PathBuf> {
     refresh_cache = false,
     cache_dir = None,
     ignore_file = None,
-    full_journal_names = false
+    full_journal_names = false,
+    full_author_lists = false
 ))]
 fn sync_files_py<'py>(
     py: Python<'py>,
@@ -70,6 +71,7 @@ fn sync_files_py<'py>(
     cache_dir: Option<String>,
     ignore_file: Option<String>,
     full_journal_names: bool,
+    full_author_lists: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
     let options = SyncOptions {
         output: output.map(PathBuf::from),
@@ -85,6 +87,7 @@ fn sync_files_py<'py>(
         cache_dir: cache_dir.map(PathBuf::from),
         ignore_file: ignore_file.map(PathBuf::from),
         full_journal_names,
+        full_author_lists,
     };
     let files = files.into_iter().map(PathBuf::from).collect::<Vec<_>>();
     let report =
@@ -119,6 +122,7 @@ fn sync_files_py<'py>(
         })
         .collect::<PyResult<Vec<_>>>()?;
     dict.set_item("unexpanded_journals", unexpanded_journals)?;
+    dict.set_item("truncated_author_lists", report.truncated_author_lists)?;
     dict.set_item("changed", report.changed)?;
     dict.set_item("check_mode", report.check_mode)?;
     Ok(dict)

@@ -29,6 +29,7 @@ def test_sync_files_reports_existing_complete_bib_entry(tmp_path: Path) -> None:
         "unresolved": [],
         "unresolved_details": [],
         "unexpanded_journals": [],
+        "truncated_author_lists": [],
         "changed": False,
         "check_mode": True,
     }
@@ -57,9 +58,11 @@ def test_sync_files_accepts_full_journal_names(tmp_path: Path) -> None:
         [str(bibliography)],
         provider="inspire",
         full_journal_names=True,
+        full_author_lists=True,
     )
 
     assert report["unexpanded_journals"] == []
+    assert report["truncated_author_lists"] == []
     assert report["changed"] is False
 
 
