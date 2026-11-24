@@ -159,7 +159,9 @@ pub struct SyncOptions {
     /// existing ones) whose `journal` or `booktitle` looks abbreviated.
     pub check_venue_names: bool,
     /// File of venue names that `check_venue_names` accepts as full names,
-    /// one per line (`#` starts a comment). Must exist when given.
+    /// one per line (`#` starts a comment). It covers names the heuristic
+    /// flags, never an abbreviation in bibsync's journal table. Must exist
+    /// when given, even with `check_venue_names` off.
     pub accepted_venues: Option<PathBuf>,
     /// Replace author lists that the provider truncated to `... and others`
     /// with the complete list (or, for large collaboration papers, the
@@ -245,15 +247,38 @@ pub struct AuthorList {
     pub collaborations: Vec<String>,
 }
 
-/// A `journal` or `booktitle` value that looks abbreviated.
+/// A `journal` or `booktitle` value that the venue check reports.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AbbreviatedVenue {
     /// Citekey of the entry.
     pub key: String,
-    /// Field name, lower-cased (`journal` or `booktitle`).
+    /// Field name, lower-cased (`journal` or `booktitle`); empty for
+    /// [`VenueProblem::UnreadableEntry`].
     pub field: String,
-    /// The value as written in the entry.
+    /// The value without its delimiters, with the parts of a concatenation
+    /// joined; a macro reference as written; empty for
+    /// [`VenueProblem::UnreadableEntry`].
     pub value: String,
+    /// Why the value is reported.
+    pub problem: VenueProblem,
+}
+
+/// Why the venue check reports a value.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum VenueProblem {
+    /// An abbreviation in bibsync's journal table. Always reported; the
+    /// accepted-venues file does not apply.
+    KnownAbbreviation {
+        /// The table's full name for it.
+        full_name: String,
+    },
+    /// Not in bibsync's journal table and looks abbreviated. Not reported when
+    /// listed in the accepted-venues file.
+    LooksAbbreviated,
+    /// A macro reference (`journal = prd`), whose text bibsync cannot see.
+    Macro,
+    /// The entry's fields could not be read, so its venue was not checked.
+    UnreadableEntry,
 }
 
 /// A journal name that `full_journal_names` could not confirm: not an
@@ -561,14 +586,15 @@ pub fn sync_files_with_provider(
         }
     }
 
+    // Read even when the check is off, so a mistyped path is reported.
+    let accepted = match &options.accepted_venues {
+        Some(path) => load_ignore_set(path, "accepted venues file")?
+            .iter()
+            .map(|name| journals::venue_key(name))
+            .collect(),
+        None => BTreeSet::new(),
+    };
     if options.check_venue_names {
-        let accepted = match &options.accepted_venues {
-            Some(path) => load_ignore_set(path, "accepted venues file")?
-                .iter()
-                .map(|name| journals::venue_key(name))
-                .collect(),
-            None => BTreeSet::new(),
-        };
         report.abbreviated_venues = bibliography.abbreviated_venues(&accepted);
     }
 
@@ -1125,20 +1151,22 @@ impl Bibliography {
         }
     }
 
-    /// Every `journal` or `booktitle` value in the bibliography that looks
-    /// abbreviated, in citekey order. Names whose venue key is in `accepted`
-    /// are not reported. A bare value is a macro reference and a
-    /// concatenation cannot be judged, so both are reported as written; an
-    /// entry whose fields cannot be read is reported rather than skipped.
+    /// Every `journal` or `booktitle` value in the bibliography that the venue
+    /// check reports, in citekey order. The parts of a concatenation are
+    /// joined and judged together. Names whose venue key is in `accepted` are
+    /// not reported when only the heuristic flags them; an abbreviation in
+    /// the journal table always is. A macro reference cannot be judged and an
+    /// entry whose fields cannot be read cannot be checked, so both are
+    /// reported.
     fn abbreviated_venues(&self, accepted: &BTreeSet<String>) -> Vec<AbbreviatedVenue> {
         let mut found = Vec::new();
         for entry in self.entries.values() {
             let Some(entry_fields) = fields::parse_fields(&entry.body) else {
                 found.push(AbbreviatedVenue {
                     key: entry.key.clone(),
-                    field: "entry".to_owned(),
-                    value: "fields could not be read; check journal and booktitle by hand"
-                        .to_owned(),
+                    field: String::new(),
+                    value: String::new(),
+                    problem: VenueProblem::UnreadableEntry,
                 });
                 continue;
             };
@@ -1146,21 +1174,31 @@ impl Bibliography {
                 if field.name != "journal" && field.name != "booktitle" {
                     continue;
                 }
-                let raw = &entry.body[field.value_span.clone()];
-                let report = match field.delimited_text(&entry.body) {
-                    Some(text) => {
-                        !text.trim().is_empty()
-                            && !accepted.contains(&journals::venue_key(text))
-                            && journals::venue_looks_abbreviated(text)
-                    }
-                    // A macro (`journal = prd`) or a concatenation.
-                    None => !accepted.contains(&journals::venue_key(raw)),
+                let finding = match field.joined_text(&entry.body) {
+                    None => Some((
+                        entry.body[field.value_span.clone()].to_owned(),
+                        VenueProblem::Macro,
+                    )),
+                    Some(text) if text.trim().is_empty() => None,
+                    Some(text) => match journals::judge_venue(&text) {
+                        journals::VenueVerdict::Full => None,
+                        journals::VenueVerdict::KnownAbbreviation(full_name) => Some((
+                            text,
+                            VenueProblem::KnownAbbreviation {
+                                full_name: full_name.to_owned(),
+                            },
+                        )),
+                        journals::VenueVerdict::LooksAbbreviated => (!accepted
+                            .contains(&journals::venue_key(&text)))
+                        .then_some((text, VenueProblem::LooksAbbreviated)),
+                    },
                 };
-                if report {
+                if let Some((value, problem)) = finding {
                     found.push(AbbreviatedVenue {
                         key: entry.key.clone(),
                         field: field.name.clone(),
-                        value: field.delimited_text(&entry.body).unwrap_or(raw).to_owned(),
+                        value,
+                        problem,
                     });
                 }
             }
@@ -2268,8 +2306,8 @@ pub fn pre_commit_hook_manifest(ignore_file: Option<&Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        BibliographyProvider, ProviderChoice, ResolvedEntry, SyncOptions, UnresolvedCitation,
-        citation_keys, sync_files_with_provider,
+        BibliographyProvider, BibsyncError, ProviderChoice, ResolvedEntry, SyncOptions,
+        UnresolvedCitation, VenueProblem, citation_keys, sync_files_with_provider,
     };
     use std::cell::Cell;
     use std::collections::BTreeMap;
@@ -3110,34 +3148,85 @@ mod tests {
         let found = venue_report(
             "@article{bare,\n  journal = prd\n}\n\n\
              @article{concat,\n  journal = \"Phys. Rev.\" # \" D\"\n}\n\n\
+             @article{fullconcat,\n  journal = \"Physical Review\" # \" D\"\n}\n\n\
+             @article{macroconcat,\n  journal = prd # \" Letters\"\n}\n\n\
              @article{unreadable,\n  journal {Phys. Rev. D},\n  booktitle = {Proc. SPIE}\n}\n",
             None,
         );
-        let keys = found
-            .iter()
-            .map(|(key, field, _)| (key.as_str(), field.as_str()))
-            .collect::<Vec<_>>();
         assert_eq!(
-            keys,
+            found,
             [
-                ("bare", "journal"),
-                ("concat", "journal"),
-                ("unreadable", "entry")
+                ("bare".to_owned(), "journal".to_owned(), "prd".to_owned()),
+                (
+                    "concat".to_owned(),
+                    "journal".to_owned(),
+                    "Phys. Rev. D".to_owned()
+                ),
+                (
+                    "macroconcat".to_owned(),
+                    "journal".to_owned(),
+                    "prd # \" Letters\"".to_owned()
+                ),
+                ("unreadable".to_owned(), String::new(), String::new()),
             ]
         );
+        let problems = venue_problems(
+            "@article{bare,\n  journal = prd\n}\n\n\
+             @article{concat,\n  journal = \"Phys. Rev.\" # \" D\"\n}\n\n\
+             @article{rna,\n  journal = {RNA}\n}\n\n\
+             @article{unreadable,\n  journal {Phys. Rev. D}\n}\n",
+        );
+        assert_eq!(
+            problems,
+            [
+                VenueProblem::Macro,
+                VenueProblem::KnownAbbreviation {
+                    full_name: "Physical Review D".to_owned()
+                },
+                VenueProblem::LooksAbbreviated,
+                VenueProblem::UnreadableEntry,
+            ]
+        );
+    }
+
+    fn venue_problems(bib_text: &str) -> Vec<VenueProblem> {
+        let dir = tempdir().expect("tempdir");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&bib, bib_text).expect("write bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+        sync_files_with_provider(
+            &[bib],
+            &SyncOptions {
+                provider: ProviderChoice::Inspire,
+                check: true,
+                update_mode: super::UpdateMode::Never,
+                check_venue_names: true,
+                ..SyncOptions::default()
+            },
+            &provider,
+        )
+        .expect("sync")
+        .abbreviated_venues
+        .into_iter()
+        .map(|venue| venue.problem)
+        .collect()
     }
 
     #[test]
     fn accepted_venues_are_not_reported() {
         let bib = "@article{rna,\n  journal = {RNA}\n}\n\n\
                    @article{bulletin,\n  journal = {Bulletin of the Russian Academy of Sciences. Physics}\n}\n\n\
+                   @article{concat,\n  journal = \"R\" # \"NA\"\n}\n\n\
                    @article{prd,\n  journal = {Phys. Rev. D}\n}\n";
         let unaccepted = venue_report(bib, None);
-        assert_eq!(unaccepted.len(), 3, "{unaccepted:?}");
+        assert_eq!(unaccepted.len(), 4, "{unaccepted:?}");
+        // Listing a table abbreviation does not hide it.
         let accepted = venue_report(
             bib,
             Some(
-                "# full names the heuristic flags\nRNA\nBulletin of the Russian Academy of Sciences: Physics\n",
+                "# full names the heuristic flags\nRNA\nBulletin of the Russian Academy of Sciences: Physics\nPhys. Rev. D\n",
             ),
         );
         assert_eq!(
@@ -3147,6 +3236,31 @@ mod tests {
                 "journal".to_owned(),
                 "Phys. Rev. D".to_owned()
             )]
+        );
+    }
+
+    #[test]
+    fn accepted_venues_file_is_read_without_the_check() {
+        let dir = tempdir().expect("tempdir");
+        let bib = dir.path().join("refs.bib");
+        std::fs::write(&bib, "@article{a,\n  journal = {RNA}\n}\n").expect("write bib");
+        let provider = FakeProvider {
+            entries: BTreeMap::new(),
+        };
+        let result = sync_files_with_provider(
+            &[bib],
+            &SyncOptions {
+                provider: ProviderChoice::Inspire,
+                check: true,
+                update_mode: super::UpdateMode::Never,
+                accepted_venues: Some(dir.path().join("missing.txt")),
+                ..SyncOptions::default()
+            },
+            &provider,
+        );
+        assert!(
+            matches!(result, Err(BibsyncError::MissingInput { .. })),
+            "{result:?}"
         );
     }
 

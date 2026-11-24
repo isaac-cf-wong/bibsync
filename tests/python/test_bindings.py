@@ -81,7 +81,13 @@ def test_sync_files_reports_abbreviated_venues(tmp_path: Path) -> None:
     )
 
     assert report["abbreviated_venues"] == [
-        {"key": "smith2024", "field": "journal", "value": "Phys. Rev. D"}
+        {
+            "key": "smith2024",
+            "field": "journal",
+            "value": "Phys. Rev. D",
+            "problem": "known_abbreviation",
+            "full_name": "Physical Review D",
+        }
     ]
 
 

@@ -170,19 +170,30 @@ pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
 /// Words that end in a period inside full journal names.
 const FULL_NAME_ABBREVIATIONS: &[&str] = &["St.", "Ste.", "Mt.", "Ft."];
 
-/// Whether a venue name should be reported as abbreviated by the venue check.
+/// How the venue check judges a venue name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VenueVerdict {
+    /// One of the table's full names, or a name that does not look abbreviated.
+    Full,
+    /// An abbreviation in the table, with its full name.
+    KnownAbbreviation(&'static str),
+    /// Not in the table, but looks abbreviated by [`looks_abbreviated`].
+    LooksAbbreviated,
+}
+
+/// Judge a venue name for the venue check.
 ///
 /// The table decides when it can: one of its abbreviations is abbreviated,
 /// and one of its full names is not. Any other name is judged by
 /// [`looks_abbreviated`].
-pub(crate) fn venue_looks_abbreviated(venue: &str) -> bool {
-    if full_name(venue).is_some_and(|full| lookup_key(full) != lookup_key(venue)) {
-        return true;
+pub(crate) fn judge_venue(venue: &str) -> VenueVerdict {
+    if let Some(full) = full_name(venue).filter(|full| lookup_key(full) != lookup_key(venue)) {
+        return VenueVerdict::KnownAbbreviation(full);
     }
-    if is_known_full_name(venue) {
-        return false;
+    if is_known_full_name(venue) || !looks_abbreviated(venue) {
+        return VenueVerdict::Full;
     }
-    looks_abbreviated(venue)
+    VenueVerdict::LooksAbbreviated
 }
 
 /// Whether a name looks abbreviated: an unexpanded macro (`\\prd`), a word cut
@@ -254,7 +265,12 @@ mod tests {
 
     #[test]
     fn venue_check_uses_the_table_before_the_heuristic() {
-        use super::venue_looks_abbreviated;
+        use super::{VenueVerdict, judge_venue};
+        assert_eq!(
+            judge_venue("Phys. Rev. D"),
+            VenueVerdict::KnownAbbreviation("Physical Review D")
+        );
+        assert_eq!(judge_venue("RNA"), VenueVerdict::LooksAbbreviated);
         for name in [
             "Phys. Rev. D",
             "Phys.Rev.D",
@@ -266,7 +282,7 @@ mod tests {
             "Proc. SPIE",
             "ApJL",
         ] {
-            assert!(venue_looks_abbreviated(name), "{name}");
+            assert_ne!(judge_venue(name), VenueVerdict::Full, "{name}");
         }
         for name in [
             "Physical Review D",
@@ -277,7 +293,7 @@ mod tests {
             "St. Petersburg Mathematical Journal",
             "Astronomy and Astrophysics. Supplement Series",
         ] {
-            assert!(!venue_looks_abbreviated(name), "{name}");
+            assert_eq!(judge_venue(name), VenueVerdict::Full, "{name}");
         }
     }
 

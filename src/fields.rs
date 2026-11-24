@@ -16,6 +16,9 @@ pub(crate) struct Field {
     pub(crate) span: Range<usize>,
     /// Byte range of the value, including its delimiters.
     pub(crate) value_span: Range<usize>,
+    /// Byte ranges of the `#`-separated parts of the value, each with its
+    /// delimiters; a single part unless the value is a concatenation.
+    pub(crate) parts: Vec<Range<usize>>,
 }
 
 impl Field {
@@ -23,19 +26,32 @@ impl Field {
     ///
     /// Returns `None` for a bare or concatenated (`#`) value.
     pub(crate) fn delimited_text<'a>(&self, body: &'a str) -> Option<&'a str> {
-        let raw = &body[self.value_span.clone()];
-        let inner = raw
-            .strip_prefix('"')
-            .and_then(|rest| rest.strip_suffix('"'))
-            .or_else(|| {
-                raw.strip_prefix('{')
-                    .and_then(|rest| rest.strip_suffix('}'))
-            })?;
-        // A value such as `{a} # {b}` also starts and ends with a brace.
-        (value_end(raw.as_bytes(), 0, false) == Some(raw.len())
-            || value_end(raw.as_bytes(), 0, true) == Some(raw.len()))
-        .then_some(inner)
+        match self.parts.as_slice() {
+            [part] => strip_delimiters(&body[part.clone()]),
+            _ => None,
+        }
     }
+
+    /// The text of a value whose parts are all delimited, joined as BibTeX
+    /// joins a concatenation: `"Phys. Rev." # " D"` reads `Phys. Rev. D`.
+    ///
+    /// Returns `None` when any part is a bare macro reference.
+    pub(crate) fn joined_text(&self, body: &str) -> Option<String> {
+        self.parts
+            .iter()
+            .map(|part| strip_delimiters(&body[part.clone()]))
+            .collect()
+    }
+}
+
+/// A single value token without its outer `"..."` or `{...}` delimiters.
+fn strip_delimiters(raw: &str) -> Option<&str> {
+    raw.strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .or_else(|| {
+            raw.strip_prefix('{')
+                .and_then(|rest| rest.strip_suffix('}'))
+        })
 }
 
 /// Parse the fields of an entry body (the text after `key,`).
@@ -71,18 +87,23 @@ fn parse_fields_with(body: &str, escapes: bool) -> Option<Vec<Field>> {
         index = skip_whitespace(bytes, index + 1);
         let value_start = index;
         let mut value_stop = value_end(bytes, index, escapes)?;
+        let mut parts = Vec::new();
+        parts.push(value_start..value_stop);
         // Concatenations: `"a" # macro # {b}`.
         loop {
             let next = skip_whitespace(bytes, value_stop);
             if bytes.get(next) != Some(&b'#') {
                 break;
             }
-            value_stop = value_end(bytes, skip_whitespace(bytes, next + 1), escapes)?;
+            let part_start = skip_whitespace(bytes, next + 1);
+            value_stop = value_end(bytes, part_start, escapes)?;
+            parts.push(part_start..value_stop);
         }
         fields.push(Field {
             name,
             span: name_start..value_stop,
             value_span: value_start..value_stop,
+            parts,
         });
         index = skip_whitespace(bytes, value_stop);
         match bytes.get(index) {
@@ -262,6 +283,26 @@ mod tests {
         let fields = parse_fields(body).expect("parses");
         assert_eq!(fields[0].delimited_text(body), Some("trailing slash\\"));
         assert_eq!(fields[1].delimited_text(body), Some("LIGO,, Virgo"));
+    }
+
+    #[test]
+    fn joins_delimited_parts_of_a_concatenation() {
+        let body =
+            "a = \"Phys. Rev.\" # \" D\", b = {Phys.} # { Rev. D}, c = prd # \" D\", d = {x}";
+        let fields = parse_fields(body).expect("parses");
+        let joined = fields
+            .iter()
+            .map(|field| field.joined_text(body))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            joined,
+            [
+                Some("Phys. Rev. D".to_owned()),
+                Some("Phys. Rev. D".to_owned()),
+                None,
+                Some("x".to_owned())
+            ]
+        );
     }
 
     #[test]

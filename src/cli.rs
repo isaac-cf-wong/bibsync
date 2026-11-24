@@ -1,6 +1,9 @@
 //! Shared command-line runner for the native binary and Python entry point.
 
-use crate::{ProviderChoice, SyncOptions, UpdateMode, pre_commit_hook_manifest, sync_files};
+use crate::{
+    AbbreviatedVenue, ProviderChoice, SyncOptions, UpdateMode, VenueProblem,
+    pre_commit_hook_manifest, sync_files,
+};
 use clap::{Parser, ValueEnum};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -69,8 +72,13 @@ struct Cli {
     check_venue_names: bool,
 
     /// File of venue names that --check-venue-names accepts as full names,
-    /// one per line (supports # comments).
-    #[arg(long = "accepted-venues", value_name = "FILE")]
+    /// one per line (supports # comments). It cannot accept an abbreviation
+    /// in bibsync's journal table.
+    #[arg(
+        long = "accepted-venues",
+        value_name = "FILE",
+        requires = "check_venue_names"
+    )]
     accepted_venues: Option<PathBuf>,
 
     /// Merge entries found in read-only bibliography files.
@@ -215,10 +223,7 @@ where
                 );
             }
             for venue in &report.abbreviated_venues {
-                eprintln!(
-                    "bibsync: {} in {} looks abbreviated: {:?}; write the full venue name, or list it in --accepted-venues",
-                    venue.field, venue.key, venue.value
-                );
+                eprintln!("bibsync: {}", venue_message(venue));
             }
             if report.changed {
                 if report.check_mode {
@@ -237,5 +242,29 @@ where
             eprintln!("error: {error}");
             2
         }
+    }
+}
+
+/// The diagnostic printed for one finding of --check-venue-names.
+fn venue_message(venue: &AbbreviatedVenue) -> String {
+    let AbbreviatedVenue {
+        key,
+        field,
+        value,
+        problem,
+    } = venue;
+    match problem {
+        VenueProblem::KnownAbbreviation { full_name } => {
+            format!("{field} in {key} is abbreviated: {value:?}; write {full_name:?}")
+        }
+        VenueProblem::LooksAbbreviated => format!(
+            "{field} in {key} looks abbreviated: {value:?}; write the full venue name, or list it in --accepted-venues if it is already the full name"
+        ),
+        VenueProblem::Macro => format!(
+            "{field} in {key} is the macro {value}, which cannot be checked; write the full venue name in braces"
+        ),
+        VenueProblem::UnreadableEntry => format!(
+            "the fields of {key} could not be read, so its journal and booktitle were not checked; fix the entry"
+        ),
     }
 }

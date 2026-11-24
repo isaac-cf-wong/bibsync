@@ -1,6 +1,17 @@
 from collections.abc import Sequence
 from typing import TypedDict
 
+class AbbreviatedVenue(TypedDict):
+    key: str
+    # Empty for an unreadable entry.
+    field: str
+    # Joined text of the value; a macro as written; empty for an unreadable entry.
+    value: str
+    # "known_abbreviation", "looks_abbreviated", "macro" or "unreadable_entry".
+    problem: str
+    # The journal table's full name for a known abbreviation, otherwise empty.
+    full_name: str
+
 class SyncReport(TypedDict):
     output: str
     added: list[str]
@@ -11,7 +22,7 @@ class SyncReport(TypedDict):
     unresolved_details: list[dict[str, str]]
     unexpanded_journals: list[dict[str, str]]
     truncated_author_lists: list[str]
-    abbreviated_venues: list[dict[str, str]]
+    abbreviated_venues: list[AbbreviatedVenue]
     changed: bool
     check_mode: bool
 

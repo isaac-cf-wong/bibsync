@@ -1,6 +1,6 @@
 //! Python bindings for `bibsync`.
 
-use crate::{ProviderChoice, SyncOptions, UpdateMode, cli, sync_files};
+use crate::{ProviderChoice, SyncOptions, UpdateMode, VenueProblem, cli, sync_files};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -136,6 +136,14 @@ fn sync_files_py<'py>(
             item.set_item("key", venue.key)?;
             item.set_item("field", venue.field)?;
             item.set_item("value", venue.value)?;
+            let (problem, full_name) = match venue.problem {
+                VenueProblem::KnownAbbreviation { full_name } => ("known_abbreviation", full_name),
+                VenueProblem::LooksAbbreviated => ("looks_abbreviated", String::new()),
+                VenueProblem::Macro => ("macro", String::new()),
+                VenueProblem::UnreadableEntry => ("unreadable_entry", String::new()),
+            };
+            item.set_item("problem", problem)?;
+            item.set_item("full_name", full_name)?;
             Ok(item)
         })
         .collect::<PyResult<Vec<_>>>()?;

@@ -375,8 +375,28 @@ fn cli_check_venue_names_fails_on_abbreviated_journal() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "journal in smith2024 looks abbreviated: \"Phys. Rev. D\"",
+            "journal in smith2024 is abbreviated: \"Phys. Rev. D\"; write \"Physical Review D\"",
         ));
+}
+
+#[test]
+fn cli_accepted_venues_requires_the_check() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(&bib, "@article{a,\n  journal = {RNA}\n}\n").expect("write bib");
+    let accepted = dir.path().join("accepted-venues.txt");
+    std::fs::write(&accepted, "RNA\n").expect("write accepted venues");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--accepted-venues")
+        .arg(&accepted)
+        .arg(&bib)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--check-venue-names"));
 }
 
 /// In check mode a bibliography that also needs updating must still name its
@@ -403,6 +423,6 @@ fn cli_check_venue_names_reports_before_out_of_date() {
         .code(1)
         .stderr(predicate::str::contains("out of date"))
         .stderr(predicate::str::contains(
-            "journal in zeta2024 looks abbreviated: \"Phys. Rev. D\"",
+            "journal in zeta2024 is abbreviated: \"Phys. Rev. D\"",
         ));
 }
