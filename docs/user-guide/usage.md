@@ -200,7 +200,8 @@ bibsync: journal "Phys. Rev. Z" in 2001.00001 is not in bibsync's journal table;
 ```
 
 From Python, pass `full_journal_names=True` to `bibsync.sync_files`; the report's
-`unexpanded_journals` lists the abbreviations that were left unchanged.
+`unexpanded_journals` lists the journal names that were left unchanged because
+they are not in the table.
 
 ## Updating A BibTeX File
 

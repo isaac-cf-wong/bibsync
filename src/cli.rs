@@ -46,8 +46,8 @@ struct Cli {
 
     /// Write journal names in full instead of the provider's abbreviation.
     ///
-    /// Applies to entries resolved from a provider. Abbreviations with no
-    /// known full name are left unchanged and reported.
+    /// Applies to entries resolved from a provider. Journal names that are
+    /// not in bibsync's journal table are left unchanged and reported.
     #[arg(long = "full-journal-names")]
     full_journal_names: bool,
 
