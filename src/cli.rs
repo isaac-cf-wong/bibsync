@@ -44,6 +44,13 @@ struct Cli {
     #[arg(long = "ignore-file", value_name = "FILE")]
     ignore_file: Option<PathBuf>,
 
+    /// Write journal names in full instead of the provider's abbreviation.
+    ///
+    /// Applies to entries resolved from a provider. Abbreviations with no
+    /// known full name are left unchanged and reported.
+    #[arg(long = "full-journal-names")]
+    full_journal_names: bool,
+
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
     merge_other: bool,
@@ -147,6 +154,7 @@ where
         refresh_cache: cli.refresh_cache,
         cache_dir: cli.cache_dir,
         ignore_file: cli.ignore_file,
+        full_journal_names: cli.full_journal_names,
     };
 
     match sync_files(&cli.files, &options) {
@@ -169,6 +177,12 @@ where
                 for detail in &report.unresolved_details {
                     println!("  {}: {}", detail.key, detail.reason);
                 }
+            }
+            for unexpanded in &report.unexpanded_journals {
+                eprintln!(
+                    "bibsync: no full name known for journal {:?} in {}; left unchanged",
+                    unexpanded.journal, unexpanded.key
+                );
             }
             if report.changed {
                 if report.check_mode {

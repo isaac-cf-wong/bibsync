@@ -1,2 +1,9 @@
 [default]
 extend-ignore-re = ["cafebabe"]
+
+# Journal abbreviations (src/journals.rs) and the American Astronomical Society.
+[default.extend-words]
+AAS = "AAS"
+Comput = "Comput"
+Commun = "Commun"
+Lond = "Lond"
