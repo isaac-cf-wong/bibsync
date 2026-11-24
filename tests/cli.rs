@@ -347,3 +347,28 @@ fn cli_accepts_full_journal_names() {
         .success()
         .stdout(predicate::str::contains("bibliography is up to date"));
 }
+
+/// The documented JOSS hook must write a bibliography that meets JOSS's
+/// reference rules: full author lists (so citations read "et al.") and full
+/// journal names.
+#[test]
+fn documented_joss_hooks_write_full_names() {
+    let joss_hooks = documented_hooks()
+        .into_iter()
+        .filter(|hook| hook.args.iter().any(|arg| arg == "paper.md"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        joss_hooks.len(),
+        2,
+        "expected the JOSS example in README.md and in the pre-commit guide"
+    );
+    for hook in joss_hooks {
+        for flag in ["--full-author-lists", "--full-journal-names"] {
+            assert!(
+                hook.args.iter().any(|arg| arg == flag),
+                "{}: JOSS hook does not pass {flag}",
+                hook.source
+            );
+        }
+    }
+}
