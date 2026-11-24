@@ -38,8 +38,28 @@ repos:
             args: [--cache, --provider, inspire, --output, references.bib]
 ```
 
-The hook receives changed file paths from pre-commit. In most projects, restrict
-the hook to TeX sources so it runs only when citations may have changed.
+## Run The Hook When Either File Changes
+
+pre-commit passes the hook only the staged files that match it. If a commit
+changes the bibliography but not the document that cites it, `bibsync` receives
+only the `.bib` file; it then checks that file's own entries and never reads
+which keys the document cites, so deleting a cited entry from the bibliography
+would pass. Name the citing documents in `args`, set `pass_filenames: false`,
+and match both the documents and the bibliography in `files:`:
+
+```yaml
+repos:
+    - repo: https://github.com/isaac-cf-wong/bibsync
+      rev: v1.0.2
+      hooks:
+          - id: bibsync-bin
+            files: ^paper\.(md|bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
+```
+
+For a LaTeX project, list the citing `.tex` files (for example `main.tex`) in
+`args` instead of `paper.md`, and match them and the `.bib` file in `files:`.
 
 For update behavior:
 

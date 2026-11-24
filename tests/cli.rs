@@ -138,3 +138,86 @@ fn cli_exposes_cache_flags() {
         .stdout(predicate::str::contains("--refresh-cache"))
         .stdout(predicate::str::contains("--cache-dir"));
 }
+
+/// The hook configuration the README recommends for a JOSS paper, as pre-commit
+/// would run it: `(files regex, pass_filenames, args)`.
+fn readme_joss_hook() -> (regex::Regex, bool, Vec<String>) {
+    let readme = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))
+        .expect("read README.md");
+    let section = readme
+        .split_once("For a JOSS paper")
+        .expect("README has a JOSS hook example")
+        .1;
+    let block = section
+        .split_once("```yaml")
+        .and_then(|(_, rest)| rest.split_once("```"))
+        .expect("JOSS example is a yaml block")
+        .0;
+    let files = block
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("files:"))
+        .map_or(".*", str::trim);
+    let pass_filenames = !block
+        .lines()
+        .any(|line| line.trim() == "pass_filenames: false");
+    let args = block
+        .split_once("args:")
+        .and_then(|(_, rest)| rest.split_once('['))
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .expect("hook args are a list")
+        .0
+        .split(',')
+        .map(str::trim)
+        .filter(|arg| !arg.is_empty())
+        .map(str::to_owned)
+        .collect();
+    (
+        regex::Regex::new(files).expect("files is a regex"),
+        pass_filenames,
+        args,
+    )
+}
+
+/// A commit that only edits `paper.bib` must still be checked against the keys
+/// `paper.md` cites. pre-commit passes the hook only the staged files that
+/// match, so a hook that relies on the file list either does not run or sees
+/// `paper.bib` alone, and a removed entry for a cited key goes unnoticed.
+#[test]
+fn readme_joss_hook_checks_citations_when_only_bib_changes() {
+    let (files, pass_filenames, args) = readme_joss_hook();
+    let staged = ["paper.bib"];
+    let matched = staged
+        .iter()
+        .filter(|path| files.is_match(path))
+        .collect::<Vec<_>>();
+    assert!(
+        !matched.is_empty(),
+        "the documented hook does not run when only paper.bib changes"
+    );
+
+    let dir = tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join("paper.md"),
+        "---\ntitle: Example\nbibliography: paper.bib\n---\n\nText [@smith2024; @jones2023].\n",
+    )
+    .expect("write paper.md");
+    // The commit removed the entry for jones2023, which paper.md still cites.
+    std::fs::write(
+        dir.path().join("paper.bib"),
+        "@misc{smith2024,\n  title = {Kept}\n}\n",
+    )
+    .expect("write paper.bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .current_dir(dir.path())
+        .env("BIBSYNC_CACHE_DIR", dir.path().join("cache"))
+        .args(&args);
+    if pass_filenames {
+        command.args(&matched);
+    }
+    command
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("jones2023"));
+}

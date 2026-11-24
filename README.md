@@ -268,12 +268,20 @@ repos:
       rev: v1.0.2
       hooks:
           - id: bibsync-bin
-            files: ^paper\.md$
-            args: [--fix, --cache, --provider, inspire, --output, paper.bib]
+            files: ^paper\.(md|bib)$
+            pass_filenames: false
+            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
 ```
 
-The `--output` bibliography is read and written even when it is not itself
-matched by `files:`, so scoping to `paper.md` still keeps `paper.bib` in sync.
+**Name the citing document in `args` and set `pass_filenames: false`.**
+pre-commit passes the hook only the staged files that match. When a commit
+changes `paper.bib` but not `paper.md`, `bibsync` would receive only
+`paper.bib`; it then checks that file's own entries and never reads which keys
+`paper.md` cites, so deleting a cited entry from `paper.bib` would pass. With
+`pass_filenames: false` the hook always scans `paper.md`, and `files:` makes it
+run whenever either file changes. For a LaTeX project, list the `.tex` files
+that cite (for example `main.tex`) in `args` and match them and the `.bib` file
+in `files:`.
 
 The remaining examples below omit `files:` for brevity; add it to match your
 project layout.
