@@ -353,8 +353,25 @@ repos:
           - id: bibsync-bin
             files: ^paper\.(md|bib)$
             pass_filenames: false
-            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
+            args:
+                [
+                    --fix,
+                    --cache,
+                    --provider,
+                    inspire,
+                    --full-author-lists,
+                    --full-journal-names,
+                    --output,
+                    paper.bib,
+                    paper.md,
+                ]
 ```
+
+`--full-author-lists` and `--full-journal-names` make the bibliography meet
+JOSS's reference rules: in-text citations read "et al." rather than
+"& others", and journal names are written in full (see
+[Author Lists](#author-lists) and [Journal Names](#journal-names)). Both
+options need bibsync 2.0.0 or later.
 
 **Name the citing document in `args` and set `pass_filenames: false`.**
 pre-commit passes the hook only the staged files that match. When a commit

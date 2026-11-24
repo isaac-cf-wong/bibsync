@@ -65,8 +65,24 @@ repos:
           - id: bibsync-bin
             files: ^paper\.(md|bib)$
             pass_filenames: false
-            args: [--fix, --cache, --provider, inspire, --output, paper.bib, paper.md]
+            args:
+                [
+                    --fix,
+                    --cache,
+                    --provider,
+                    inspire,
+                    --full-author-lists,
+                    --full-journal-names,
+                    --output,
+                    paper.bib,
+                    paper.md,
+                ]
 ```
+
+`--full-author-lists` and `--full-journal-names` make the bibliography meet
+JOSS's reference rules: in-text citations read "et al." rather than
+"& others", and journal names are written in full (see
+[Usage](usage.md)). Both options need bibsync 2.0.0 or later.
 
 For a LaTeX project, list the citing `.tex` files (for example `main.tex`) in
 `args` instead of `paper.md`, and match them and the `.bib` file in `files:`.

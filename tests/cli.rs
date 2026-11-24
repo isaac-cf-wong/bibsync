@@ -348,6 +348,71 @@ fn cli_accepts_full_journal_names() {
         .stdout(predicate::str::contains("bibliography is up to date"));
 }
 
+/// The documented JOSS hook must write a bibliography that meets JOSS's
+/// reference rules: full author lists (so citations read "et al.") and full
+/// journal names.
+#[test]
+fn documented_joss_hooks_write_full_names() {
+    // The JOSS examples are the ones that cite `paper.md`; the count below
+    // fails loudly if another example starts citing it.
+    let joss_hooks = documented_hooks()
+        .into_iter()
+        .filter(|hook| hook.args.iter().any(|arg| arg == "paper.md"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        joss_hooks.len(),
+        2,
+        "expected the JOSS example in README.md and in the pre-commit guide"
+    );
+    for hook in joss_hooks {
+        for flag in ["--full-author-lists", "--full-journal-names"] {
+            assert!(
+                hook.args.iter().any(|arg| arg == flag),
+                "{}: JOSS hook does not pass {flag}",
+                hook.source
+            );
+        }
+    }
+}
+
+/// Every `rev:` pin in the README and the documentation names the crate's own
+/// version, so a documented hook never points at a release that lacks the
+/// options it uses. The release workflow rewrites these pins in both places.
+#[test]
+fn documented_hook_revisions_match_the_crate_version() {
+    let root = env!("CARGO_MANIFEST_DIR");
+    let expected = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let mut documents = vec![std::path::PathBuf::from(format!("{root}/README.md"))];
+    let mut pending = vec![std::path::PathBuf::from(format!("{root}/docs"))];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).expect("read docs dir") {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "md") {
+                documents.push(path);
+            }
+        }
+    }
+    let mut pins = 0;
+    for document in documents {
+        let text = std::fs::read_to_string(&document).expect("read document");
+        for line in text.lines() {
+            if let Some(revision) = line.trim().strip_prefix("rev:") {
+                pins += 1;
+                assert_eq!(
+                    revision.trim(),
+                    expected,
+                    "{}: `{}` does not pin the crate version",
+                    document.display(),
+                    line.trim()
+                );
+            }
+        }
+    }
+    assert!(pins >= 2, "found only {pins} rev: pins");
+}
+
 #[test]
 fn cli_check_venue_names_fails_on_abbreviated_journal() {
     let dir = tempdir().expect("tempdir");

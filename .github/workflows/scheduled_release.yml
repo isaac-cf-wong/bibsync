@@ -178,6 +178,17 @@ jobs:
                   )
                   readme.write_text(readme_text, encoding="utf-8")
 
+                  # The documentation pins the same hook version as the README.
+                  for doc in sorted(Path("docs").rglob("*.md")):
+                      doc_text = doc.read_text(encoding="utf-8")
+                      updated_text = re.sub(
+                          r"(?m)^(\s+rev:\s+)v[\d.]+",
+                          rf"\g<1>v{version}",
+                          doc_text,
+                      )
+                      if updated_text != doc_text:
+                          doc.write_text(updated_text, encoding="utf-8")
+
                   today_iso = today.isoformat()
 
                   citation = Path("CITATION.cff")
@@ -196,8 +207,8 @@ jobs:
                   PY
                     cargo generate-lockfile
 
-                    if ! git diff --quiet -- Cargo.toml Cargo.lock README.md CITATION.cff; then
-                      git add Cargo.toml Cargo.lock README.md CITATION.cff
+                    if ! git diff --quiet -- Cargo.toml Cargo.lock README.md CITATION.cff docs; then
+                      git add Cargo.toml Cargo.lock README.md CITATION.cff docs
                       git commit -m "chore(release): prepare for $NEW_TAG [skip ci]"
                       git push origin "HEAD:${GITHUB_REF_NAME}"
                     else
