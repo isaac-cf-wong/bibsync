@@ -213,7 +213,8 @@ pub struct UnresolvedCitation {
     pub reason: UnresolvedReason,
 }
 
-/// A journal abbreviation with no known full name.
+/// A journal name that `full_journal_names` could not confirm: not an
+/// abbreviation in bibsync's table and not one of its full names.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnexpandedJournal {
     /// Citekey of the entry.
@@ -846,14 +847,20 @@ impl BibEntry {
     fn expand_journal(&mut self) -> Option<String> {
         let field = fields::find_field(&self.body, "journal")?;
         let raw = &self.body[field.value_span.clone()];
-        // A bare value is a macro (`journal = \\apj`, `journal = prd`);
-        // concatenations (`"Phys. Rev." # " D"`) are left alone.
+        // A bare value is a macro (`journal = \\apj`, `journal = prd`). A
+        // concatenation (`"Phys. Rev." # " D"`) cannot be looked up, so it is
+        // reported as written.
         let bare = !raw.starts_with(['"', '{']) && !raw.contains('#');
-        let journal = if bare {
-            raw
+        let Some(journal) = (if bare {
+            Some(raw)
         } else {
-            field.delimited_text(&self.body)?
+            field.delimited_text(&self.body)
+        }) else {
+            return Some(raw.to_owned());
         };
+        if journal.trim().is_empty() {
+            return None;
+        }
         if let Some(full) = journals::full_name(journal) {
             self.body = fields::replace_delimited_text(&self.body, &field, full);
             None
@@ -2215,6 +2222,32 @@ mod tests {
                 expected,
                 "{journal}"
             );
+        }
+    }
+
+    #[test]
+    fn concatenated_journal_is_reported_and_blank_journal_is_not() {
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"Phys. Rev.\" # \" D\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"Phys. Rev.\" # \" D\",\n"),
+            "{written}"
+        );
+        assert_eq!(
+            report.unexpanded_journals[0].journal,
+            "\"Phys. Rev.\" # \" D\""
+        );
+
+        for blank in ["\"\"", "{}", "{ }"] {
+            let (_, report) = sync_single_entry_with(
+                "2001.00001",
+                &journal_entry(blank),
+                with_full_journal_names(),
+            );
+            assert!(report.unexpanded_journals.is_empty(), "{blank}");
         }
     }
 
