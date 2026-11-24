@@ -32,7 +32,9 @@ impl Field {
                     .and_then(|rest| rest.strip_suffix('}'))
             })?;
         // A value such as `{a} # {b}` also starts and ends with a brace.
-        (value_end(raw.as_bytes(), 0) == Some(raw.len())).then_some(inner)
+        (value_end(raw.as_bytes(), 0, false) == Some(raw.len())
+            || value_end(raw.as_bytes(), 0, true) == Some(raw.len()))
+        .then_some(inner)
     }
 }
 
@@ -40,7 +42,16 @@ impl Field {
 ///
 /// Returns `None` when the body does not follow the `name = value` grammar;
 /// callers then leave the entry unchanged.
+///
+/// A quoted value ends at the first double quote outside braces, as in BibTeX.
+/// Hand-written and some provider entries also escape a quote with a backslash
+/// (`J\\"{u}rg`); when the BibTeX reading cannot parse the body, it is read
+/// again with a backslash escaping the next byte inside quoted values.
 pub(crate) fn parse_fields(body: &str) -> Option<Vec<Field>> {
+    parse_fields_with(body, false).or_else(|| parse_fields_with(body, true))
+}
+
+fn parse_fields_with(body: &str, escapes: bool) -> Option<Vec<Field>> {
     let bytes = body.as_bytes();
     let mut fields = Vec::new();
     let mut index = skip_separators(bytes, 0);
@@ -59,14 +70,14 @@ pub(crate) fn parse_fields(body: &str) -> Option<Vec<Field>> {
         }
         index = skip_whitespace(bytes, index + 1);
         let value_start = index;
-        let mut value_stop = value_end(bytes, index)?;
+        let mut value_stop = value_end(bytes, index, escapes)?;
         // Concatenations: `"a" # macro # {b}`.
         loop {
             let next = skip_whitespace(bytes, value_stop);
             if bytes.get(next) != Some(&b'#') {
                 break;
             }
-            value_stop = value_end(bytes, skip_whitespace(bytes, next + 1))?;
+            value_stop = value_end(bytes, skip_whitespace(bytes, next + 1), escapes)?;
         }
         fields.push(Field {
             name,
@@ -163,8 +174,9 @@ fn skip_separators(bytes: &[u8], mut index: usize) -> usize {
     index
 }
 
-/// End (exclusive) of the single value token starting at `start`.
-fn value_end(bytes: &[u8], start: usize) -> Option<usize> {
+/// End (exclusive) of the single value token starting at `start`. With
+/// `escapes`, a backslash inside a quoted value escapes the next byte.
+fn value_end(bytes: &[u8], start: usize, escapes: bool) -> Option<usize> {
     match bytes.get(start)? {
         b'{' => {
             let mut depth = 0_i32;
@@ -189,7 +201,7 @@ fn value_end(bytes: &[u8], start: usize) -> Option<usize> {
                 match bytes[index] {
                     // A backslash escapes the next byte, so `\"` (an accent
                     // such as `J\"{u}rg`) is content and `\\"` still closes.
-                    b'\\' => index += 1,
+                    b'\\' if escapes => index += 1,
                     b'{' => depth += 1,
                     b'}' => depth -= 1,
                     b'"' if depth == 0 => return Some(index + 1),
@@ -241,6 +253,15 @@ mod tests {
         assert_eq!(fields[0].delimited_text(body), Some("J\\\"{u}rg"));
         assert_eq!(fields[1].delimited_text(body), Some("path\\\\"));
         assert_eq!(fields[2].delimited_text(body), Some("LIGO,, Virgo"));
+    }
+
+    #[test]
+    fn trailing_backslash_ends_a_quoted_value_as_in_bibtex() {
+        // BibTeX ends a quoted value at the first quote outside braces.
+        let body = "note = \"trailing slash\\\", collaboration = \"LIGO,, Virgo\"";
+        let fields = parse_fields(body).expect("parses");
+        assert_eq!(fields[0].delimited_text(body), Some("trailing slash\\"));
+        assert_eq!(fields[1].delimited_text(body), Some("LIGO,, Virgo"));
     }
 
     #[test]

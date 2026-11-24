@@ -2050,6 +2050,22 @@ mod tests {
     }
 
     #[test]
+    fn collaboration_after_a_trailing_backslash_is_normalised() {
+        let written = sync_single_entry(
+            "2001.00001",
+            "@article{x,\n    note = \"trailing slash\\\",\n    collaboration = \"LIGO,, Virgo\",\n    year = \"2020\"\n}",
+        );
+        assert!(
+            written.contains("    collaboration = \"LIGO, Virgo\",\n"),
+            "{written}"
+        );
+        assert!(
+            written.contains("note = \"trailing slash\\\",\n"),
+            "{written}"
+        );
+    }
+
+    #[test]
     fn collaboration_only_entry_stays_readable() {
         let dir = tempdir().expect("tempdir");
         let tex = dir.path().join("main.tex");
