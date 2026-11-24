@@ -182,8 +182,13 @@ fn yaml_scalar<'a>(block: &'a str, key: &str) -> Option<&'a str> {
 /// Every bibsync hook configuration in the README and the pre-commit guide.
 fn documented_hooks() -> Vec<DocumentedHook> {
     let root = env!("CARGO_MANIFEST_DIR");
-    let manifest =
-        std::fs::read_to_string(format!("{root}/.pre-commit-hooks.yaml")).expect("read manifest");
+    // Git may check these files out with CRLF line endings (Windows).
+    let read = |path: &str| {
+        std::fs::read_to_string(format!("{root}/{path}"))
+            .unwrap_or_else(|error| panic!("read {path}: {error}"))
+            .replace("\r\n", "\n")
+    };
+    let manifest = read(".pre-commit-hooks.yaml");
     let manifest_types = |id: &str| {
         let hook = manifest
             .split("- id: ")
@@ -193,7 +198,7 @@ fn documented_hooks() -> Vec<DocumentedHook> {
     };
     let mut hooks = Vec::new();
     for doc in ["README.md", "docs/user-guide/pre-commit.md"] {
-        let text = std::fs::read_to_string(format!("{root}/{doc}")).expect("read doc");
+        let text = read(doc);
         for (index, block) in text.split("```yaml").skip(1).enumerate() {
             let block = block.split_once("```").expect("closed yaml block").0;
             let Some(id) = yaml_scalar(block, "- id") else {
