@@ -849,11 +849,19 @@ impl BibEntry {
     /// name is known; such a name is left unchanged, never guessed.
     fn expand_journal(&mut self) -> Option<String> {
         let field = fields::find_field(&self.body, "journal")?;
-        let journal = field.delimited_text(&self.body)?;
+        let raw = &self.body[field.value_span.clone()];
+        // A bare value is a macro (`journal = \\apj`, `journal = prd`);
+        // concatenations (`"Phys. Rev." # " D"`) are left alone.
+        let bare = !raw.starts_with(['"', '{']) && !raw.contains('#');
+        let journal = if bare {
+            raw
+        } else {
+            field.delimited_text(&self.body)?
+        };
         if let Some(full) = journals::full_name(journal) {
             self.body = fields::replace_delimited_text(&self.body, &field, full);
             None
-        } else if journals::looks_abbreviated(journal) {
+        } else if bare || journals::looks_abbreviated(journal) {
             Some(journal.to_owned())
         } else {
             None
@@ -2146,6 +2154,43 @@ mod tests {
             written.contains("    journal = {The Astrophysical Journal Letters},\n"),
             "{written}"
         );
+    }
+
+    #[test]
+    fn bare_journal_macros_are_expanded_or_reported() {
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\\apj"),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = {The Astrophysical Journal},\n"),
+            "{written}"
+        );
+        assert!(report.unexpanded_journals.is_empty());
+
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("prd"),
+            with_full_journal_names(),
+        );
+        assert!(written.contains("    journal = prd,\n"), "{written}");
+        assert_eq!(report.unexpanded_journals[0].journal, "prd");
+    }
+
+    #[test]
+    fn compact_inspire_abbreviation_is_reported() {
+        // InspireHEP's single-record BibTeX writes some titles without spaces.
+        let (written, report) = sync_single_entry_with(
+            "2001.00001",
+            &journal_entry("\"New J.Phys.\""),
+            with_full_journal_names(),
+        );
+        assert!(
+            written.contains("    journal = \"New J.Phys.\",\n"),
+            "{written}"
+        );
+        assert_eq!(report.unexpanded_journals[0].journal, "New J.Phys.");
     }
 
     #[test]
