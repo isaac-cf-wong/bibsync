@@ -2148,7 +2148,10 @@ mod tests {
                 written.contains(&format!("    journal = \"{full}\",\n")),
                 "{abbreviation}: {written}"
             );
-            assert!(report.unexpanded_journals.is_empty());
+            assert_eq!(
+                report.unexpanded_journals,
+                Vec::<super::UnexpandedJournal>::new()
+            );
         }
     }
 
@@ -2176,7 +2179,10 @@ mod tests {
             written.contains("    journal = {The Astrophysical Journal},\n"),
             "{written}"
         );
-        assert!(report.unexpanded_journals.is_empty());
+        assert_eq!(
+            report.unexpanded_journals,
+            Vec::<super::UnexpandedJournal>::new()
+        );
 
         let (written, report) = sync_single_entry_with(
             "2001.00001",
@@ -2253,7 +2259,11 @@ mod tests {
                 &journal_entry(blank),
                 with_full_journal_names(),
             );
-            assert!(report.unexpanded_journals.is_empty(), "{blank}");
+            assert_eq!(
+                report.unexpanded_journals,
+                Vec::<super::UnexpandedJournal>::new(),
+                "{blank}"
+            );
         }
     }
 
@@ -2294,7 +2304,10 @@ mod tests {
             written.contains("    journal = \"Physical Review D\",\n"),
             "{written}"
         );
-        assert!(report.unexpanded_journals.is_empty());
+        assert_eq!(
+            report.unexpanded_journals,
+            Vec::<super::UnexpandedJournal>::new()
+        );
     }
 
     #[test]
