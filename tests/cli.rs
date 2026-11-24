@@ -347,3 +347,34 @@ fn cli_accepts_full_journal_names() {
         .success()
         .stdout(predicate::str::contains("bibliography is up to date"));
 }
+
+#[test]
+fn cli_check_venue_names_fails_on_abbreviated_journal() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(
+        &bib,
+        "@article{smith2024,\n  author = {Smith, Jane},\n  journal = {Phys. Rev. D},\n  year = {2024}\n}\n",
+    )
+    .expect("write bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg(&bib)
+        .assert()
+        .success();
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--check-venue-names")
+        .arg(&bib)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "journal in smith2024 looks abbreviated: \"Phys. Rev. D\"",
+        ));
+}

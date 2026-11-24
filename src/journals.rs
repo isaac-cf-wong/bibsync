@@ -167,6 +167,52 @@ pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
         .map(|(_, full)| *full)
 }
 
+/// Words that end in a period inside full journal names.
+const FULL_NAME_ABBREVIATIONS: &[&str] = &["St.", "Ste.", "Mt.", "Ft."];
+
+/// Whether a venue name should be reported as abbreviated by the venue check.
+///
+/// The table decides when it can: one of its abbreviations is abbreviated,
+/// and one of its full names is not. Any other name is judged by
+/// [`looks_abbreviated`].
+pub(crate) fn venue_looks_abbreviated(venue: &str) -> bool {
+    if full_name(venue).is_some_and(|full| lookup_key(full) != lookup_key(venue)) {
+        return true;
+    }
+    if is_known_full_name(venue) {
+        return false;
+    }
+    looks_abbreviated(venue)
+}
+
+/// Whether a name looks abbreviated: an unexpanded macro (`\\prd`), a word cut
+/// short with a period (`Phys.`, or `J.Phys.` written without spaces), or a
+/// short all-capitals acronym standing alone (`JCAP`).
+fn looks_abbreviated(venue: &str) -> bool {
+    let name = venue.trim().trim_matches(['{', '}']).trim();
+    if name.starts_with('\\') {
+        return true;
+    }
+    let words = name.split_whitespace().collect::<Vec<_>>();
+    let cut_word = words.iter().any(|word| is_cut_word(word));
+    let acronym = words.len() == 1
+        && (2..=6).contains(&name.chars().count())
+        && name.chars().filter(char::is_ascii_uppercase).count() >= 2;
+    cut_word || acronym
+}
+
+/// A word containing a period whose period-separated pieces are short runs of
+/// letters (`Phys.`, `J.Phys.`, `Rev.Mod.Phys.`). Longer pieces such as
+/// `Astrophysics.` end a phrase rather than cut a word short.
+fn is_cut_word(word: &str) -> bool {
+    const MAX_CUT_LETTERS: usize = 9;
+    word.contains('.')
+        && !FULL_NAME_ABBREVIATIONS.contains(&word)
+        && word.split('.').all(|piece| {
+            piece.chars().all(char::is_alphabetic) && piece.chars().count() <= MAX_CUT_LETTERS
+        })
+}
+
 /// Whether `journal` is written as one of the table's full names.
 pub(crate) fn is_known_full_name(journal: &str) -> bool {
     let key = lookup_key(journal);
@@ -196,6 +242,35 @@ mod tests {
         assert!(!is_known_full_name(
             "Bulletin of the Russian Academy of Sciences. Physics"
         ));
+    }
+
+    #[test]
+    fn venue_check_uses_the_table_before_the_heuristic() {
+        use super::venue_looks_abbreviated;
+        for name in [
+            "Phys. Rev. D",
+            "Phys.Rev.D",
+            "{\\mnras}",
+            "JCAP",
+            "Nature Astron.",
+            "New J.Phys.",
+            "AIP Conf.Proc.",
+            "Proc. SPIE",
+            "ApJL",
+        ] {
+            assert!(venue_looks_abbreviated(name), "{name}");
+        }
+        for name in [
+            "Physical Review D",
+            "Nature",
+            "SoftwareX",
+            "Universe",
+            "Astronomy \\& Astrophysics",
+            "St. Petersburg Mathematical Journal",
+            "Astronomy and Astrophysics. Supplement Series",
+        ] {
+            assert!(!venue_looks_abbreviated(name), "{name}");
+        }
     }
 
     #[test]

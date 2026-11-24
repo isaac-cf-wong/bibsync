@@ -269,6 +269,25 @@ left unchanged and reported, never guessed, so you can check it by hand:
 bibsync: journal "Phys. Rev. Z" in 2001.00001 is not in bibsync's journal table; left unchanged, check that it is the full name
 ```
 
+To catch abbreviations that `--full-journal-names` cannot fix (journals missing
+from the table, and hand-written or ignored entries), add `--check-venue-names`.
+It checks the `journal` and `booktitle` of every entry in the bibliography,
+including entries listed in the ignore file, names each one that looks
+abbreviated, and makes the run fail:
+
+```text
+bibsync: journal in smith2024 looks abbreviated: "Phys. Rev. D"; write the full venue name
+```
+
+An abbreviation in bibsync's journal table is always reported and a full name
+in it never is. Any other name counts as abbreviated when it is an unexpanded
+macro (`\prd`), contains a word cut short with a period (`Phys.`, `J.Phys.`;
+`St.`, `Ste.`, `Mt.` and `Ft.` are allowed), or is a single short word with two
+or more capitals (`JCAP`). That last part is a heuristic: a full title written
+that way, such as `RNA` or `Bulletin of the Russian Academy of Sciences.
+Physics`, is reported too. For a JOSS paper's pre-commit hook, use both options
+together.
+
 ## Cache
 
 Use `--cache` to avoid repeated provider API calls:
