@@ -2780,7 +2780,7 @@ mod tests {
         );
         assert!(!written.contains("others"), "{written}");
         assert_eq!(calls, 1);
-        assert!(report.truncated_author_lists.is_empty());
+        assert_eq!(report.truncated_author_lists, Vec::<String>::new());
     }
 
     #[test]
