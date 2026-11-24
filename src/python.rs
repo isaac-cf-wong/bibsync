@@ -115,8 +115,10 @@ fn run_cli(args: Vec<String>) -> i32 {
     cli::run_cli_from(args)
 }
 
+/// The `bibsync._bibsync` extension module.
 #[pymodule]
-fn _bibsync(module: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pyo3(name = "_bibsync")]
+fn bibsync_extension(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(sync_files_py, module)?)?;
     module.add_function(wrap_pyfunction!(run_cli, module)?)?;
     Ok(())
