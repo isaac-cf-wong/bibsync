@@ -63,6 +63,10 @@ behavior.
 - `refresh_cache`: bypass cache reads and update cached provider responses.
 - `cache_dir`: override the cache location.
 - `ignore_file`: citekeys to skip during resolution.
+- `check_venue_names`: report every `journal` or `booktitle` that is or looks
+  abbreviated.
+- `accepted_venues`: names the venue check accepts although its heuristic
+  flags them.
 
 `SyncReport` describes the outcome:
 
@@ -74,6 +78,10 @@ behavior.
 - `unresolved_details`: per-citekey diagnostics explaining whether resolution
   failed because the key is not a supported identifier or because the provider
   returned no match.
+- `abbreviated_venues`: the findings of `check_venue_names`, each an
+  `AbbreviatedVenue` with the citekey, the field, the value and a
+  `VenueProblem`: `KnownAbbreviation` (with the table's full name),
+  `LooksAbbreviated`, `Macro`, or `UnreadableEntry` (field and value empty).
 - `changed`: whether the output would change.
 - `check_mode`: whether the run was check-only.
 

@@ -1,6 +1,9 @@
 //! Shared command-line runner for the native binary and Python entry point.
 
-use crate::{ProviderChoice, SyncOptions, UpdateMode, pre_commit_hook_manifest, sync_files};
+use crate::{
+    AbbreviatedVenue, ProviderChoice, SyncOptions, UpdateMode, VenueProblem,
+    pre_commit_hook_manifest, sync_files,
+};
 use clap::{Parser, ValueEnum};
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -59,6 +62,24 @@ struct Cli {
     /// from a provider.
     #[arg(long = "full-author-lists")]
     full_author_lists: bool,
+
+    /// Fail when any entry's journal or booktitle looks abbreviated.
+    ///
+    /// Checks every entry in the bibliography, including ignored and
+    /// hand-written ones. Useful for venues such as JOSS that require full
+    /// venue names.
+    #[arg(long = "check-venue-names")]
+    check_venue_names: bool,
+
+    /// File of venue names that --check-venue-names accepts as full names,
+    /// one per line (supports # comments). It cannot accept an abbreviation
+    /// in bibsync's journal table.
+    #[arg(
+        long = "accepted-venues",
+        value_name = "FILE",
+        requires = "check_venue_names"
+    )]
+    accepted_venues: Option<PathBuf>,
 
     /// Merge entries found in read-only bibliography files.
     #[arg(long)]
@@ -164,6 +185,8 @@ where
         cache_dir: cli.cache_dir,
         ignore_file: cli.ignore_file,
         full_journal_names: cli.full_journal_names,
+        check_venue_names: cli.check_venue_names,
+        accepted_venues: cli.accepted_venues,
         full_author_lists: cli.full_author_lists,
     };
 
@@ -199,6 +222,9 @@ where
                     unexpanded.journal, unexpanded.key
                 );
             }
+            for venue in &report.abbreviated_venues {
+                eprintln!("bibsync: {}", venue_message(venue));
+            }
             if report.changed {
                 if report.check_mode {
                     eprintln!(
@@ -210,11 +236,35 @@ where
             } else {
                 println!("bibliography is up to date");
             }
-            i32::from(!report.unresolved.is_empty())
+            i32::from(!report.unresolved.is_empty() || !report.abbreviated_venues.is_empty())
         }
         Err(error) => {
             eprintln!("error: {error}");
             2
         }
+    }
+}
+
+/// The diagnostic printed for one finding of --check-venue-names.
+fn venue_message(venue: &AbbreviatedVenue) -> String {
+    let AbbreviatedVenue {
+        key,
+        field,
+        value,
+        problem,
+    } = venue;
+    match problem {
+        VenueProblem::KnownAbbreviation { full_name } => {
+            format!("{field} in {key} is abbreviated: {value:?}; write {full_name:?}")
+        }
+        VenueProblem::LooksAbbreviated => format!(
+            "{field} in {key} looks abbreviated: {value:?}; write the full venue name, or list it in --accepted-venues if it is already the full name"
+        ),
+        VenueProblem::Macro => format!(
+            "{field} in {key} is the macro {value}, which cannot be checked; write the full venue name in braces"
+        ),
+        VenueProblem::UnreadableEntry => format!(
+            "the fields of {key} could not be read, so its journal and booktitle were not checked; fix the entry"
+        ),
     }
 }

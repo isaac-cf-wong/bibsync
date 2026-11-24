@@ -167,10 +167,75 @@ pub(crate) fn full_name(journal: &str) -> Option<&'static str> {
         .map(|(_, full)| *full)
 }
 
+/// Words that end in a period inside full journal names.
+const FULL_NAME_ABBREVIATIONS: &[&str] = &["St.", "Ste.", "Mt.", "Ft."];
+
+/// How the venue check judges a venue name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VenueVerdict {
+    /// One of the table's full names, or a name that does not look abbreviated.
+    Full,
+    /// An abbreviation in the table, with its full name.
+    KnownAbbreviation(&'static str),
+    /// Not in the table, but looks abbreviated by [`looks_abbreviated`].
+    LooksAbbreviated,
+}
+
+/// Judge a venue name for the venue check.
+///
+/// The table decides when it can: one of its abbreviations is abbreviated,
+/// and one of its full names is not. Any other name is judged by
+/// [`looks_abbreviated`].
+pub(crate) fn judge_venue(venue: &str) -> VenueVerdict {
+    if let Some(full) = full_name(venue).filter(|full| lookup_key(full) != lookup_key(venue)) {
+        return VenueVerdict::KnownAbbreviation(full);
+    }
+    if is_known_full_name(venue) || !looks_abbreviated(venue) {
+        return VenueVerdict::Full;
+    }
+    VenueVerdict::LooksAbbreviated
+}
+
+/// Whether a name looks abbreviated: an unexpanded macro (`\\prd`), a word cut
+/// short with a period (`Phys.`, or `J.Phys.` written without spaces), or a
+/// short all-capitals acronym standing alone (`JCAP`).
+fn looks_abbreviated(venue: &str) -> bool {
+    let name = venue.trim().trim_matches(['{', '}']).trim();
+    if name.starts_with('\\') {
+        return true;
+    }
+    let words = name.split_whitespace().collect::<Vec<_>>();
+    let cut_word = words.iter().any(|word| is_cut_word(word));
+    let acronym = words.len() == 1
+        && (2..=6).contains(&name.chars().count())
+        && name.chars().filter(char::is_ascii_uppercase).count() >= 2;
+    cut_word || acronym
+}
+
+/// A word containing a period whose period-separated pieces are short runs of
+/// letters (`Phys.`, `J.Phys.`, `Rev.Mod.Phys.`). Longer pieces such as
+/// `Astrophysics.` end a phrase rather than cut a word short.
+fn is_cut_word(word: &str) -> bool {
+    const MAX_CUT_LETTERS: usize = 9;
+    word.contains('.')
+        && !FULL_NAME_ABBREVIATIONS.contains(&word)
+        && word.split('.').all(|piece| {
+            piece.chars().all(char::is_alphabetic) && piece.chars().count() <= MAX_CUT_LETTERS
+        })
+}
+
 /// Whether `journal` is written as one of the table's full names.
 pub(crate) fn is_known_full_name(journal: &str) -> bool {
-    let key = lookup_key(journal);
-    JOURNALS.iter().any(|(_, full)| lookup_key(full) == key)
+    let key = venue_key(journal);
+    JOURNALS.iter().any(|(_, full)| venue_key(full) == key)
+}
+
+/// A comparison key for a venue name that ignores case, whitespace, braces,
+/// ties and the punctuation between a title and its section, so
+/// `Journal of Physics. Conference Series` matches `Journal of Physics:
+/// Conference Series`.
+pub(crate) fn venue_key(venue: &str) -> String {
+    lookup_key(venue).replace(':', "")
 }
 
 fn lookup_key(journal: &str) -> String {
@@ -196,6 +261,40 @@ mod tests {
         assert!(!is_known_full_name(
             "Bulletin of the Russian Academy of Sciences. Physics"
         ));
+    }
+
+    #[test]
+    fn venue_check_uses_the_table_before_the_heuristic() {
+        use super::{VenueVerdict, judge_venue};
+        assert_eq!(
+            judge_venue("Phys. Rev. D"),
+            VenueVerdict::KnownAbbreviation("Physical Review D")
+        );
+        assert_eq!(judge_venue("RNA"), VenueVerdict::LooksAbbreviated);
+        for name in [
+            "Phys. Rev. D",
+            "Phys.Rev.D",
+            "{\\mnras}",
+            "JCAP",
+            "Nature Astron.",
+            "New J.Phys.",
+            "AIP Conf.Proc.",
+            "Proc. SPIE",
+            "ApJL",
+        ] {
+            assert_ne!(judge_venue(name), VenueVerdict::Full, "{name}");
+        }
+        for name in [
+            "Physical Review D",
+            "Nature",
+            "SoftwareX",
+            "Universe",
+            "Astronomy \\& Astrophysics",
+            "St. Petersburg Mathematical Journal",
+            "Astronomy and Astrophysics. Supplement Series",
+        ] {
+            assert_eq!(judge_venue(name), VenueVerdict::Full, "{name}");
+        }
     }
 
     #[test]

@@ -412,3 +412,82 @@ fn documented_hook_revisions_match_the_crate_version() {
     }
     assert!(pins >= 2, "found only {pins} rev: pins");
 }
+
+#[test]
+fn cli_check_venue_names_fails_on_abbreviated_journal() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(
+        &bib,
+        "@article{smith2024,\n  author = {Smith, Jane},\n  journal = {Phys. Rev. D},\n  year = {2024}\n}\n",
+    )
+    .expect("write bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg(&bib)
+        .assert()
+        .success();
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--check-venue-names")
+        .arg(&bib)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains(
+            "journal in smith2024 is abbreviated: \"Phys. Rev. D\"; write \"Physical Review D\"",
+        ));
+}
+
+#[test]
+fn cli_accepted_venues_requires_the_check() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    std::fs::write(&bib, "@article{a,\n  journal = {RNA}\n}\n").expect("write bib");
+    let accepted = dir.path().join("accepted-venues.txt");
+    std::fs::write(&accepted, "RNA\n").expect("write accepted venues");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--accepted-venues")
+        .arg(&accepted)
+        .arg(&bib)
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--check-venue-names"));
+}
+
+/// In check mode a bibliography that also needs updating must still name its
+/// abbreviated venues before the run stops with "out of date".
+#[test]
+fn cli_check_venue_names_reports_before_out_of_date() {
+    let dir = tempdir().expect("tempdir");
+    let bib = dir.path().join("refs.bib");
+    // Entries out of key order, so the written file would change.
+    std::fs::write(
+        &bib,
+        "@article{zeta2024,\n  author = {Zeta, Z.},\n  journal = {Phys. Rev. D},\n  year = {2024}\n}\n\n@article{alpha2024,\n  author = {Alpha, A.},\n  journal = {Physical Review D},\n  year = {2024}\n}\n",
+    )
+    .expect("write bib");
+
+    let mut command = Command::cargo_bin("bibsync").expect("binary exists");
+    command
+        .arg("--provider")
+        .arg("inspire")
+        .arg("--no-update")
+        .arg("--check-venue-names")
+        .arg(&bib)
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("out of date"))
+        .stderr(predicate::str::contains(
+            "journal in zeta2024 is abbreviated: \"Phys. Rev. D\"",
+        ));
+}
